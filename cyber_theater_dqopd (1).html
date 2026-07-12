@@ -2,244 +2,337 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>КИБЕР-ТЕАТР DQOPD — HTML5 Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>КИБЕР-ТЕАТР DQOPD — HTML5 Edition v2</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #080812;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-            font-family: 'Consolas', monospace;
-            color: #fff;
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+        html, body {
+            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+            background: #050508; display: flex; justify-content: center; align-items: center;
+            font-family: 'Consolas', monospace; color: #fff; touch-action: none;
+        }
+        #stage {
+            position: relative; width: 1280px; height: 720px;
+            transform-origin: center center;
         }
         canvas {
             background-color: #080812;
-            box-shadow: 0 0 20px rgba(63, 207, 255, 0.3);
-            cursor: crosshair;
+            box-shadow: 0 0 30px rgba(63, 207, 255, 0.25);
+            cursor: crosshair; display: block;
         }
         #click-to-start {
-            position: absolute;
-            background: rgba(8, 8, 18, 0.95);
-            border: 2px solid #ffcf3f;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            cursor: pointer;
-            z-index: 10;
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(8, 8, 18, 0.95); border: 2px solid #ffcf3f; padding: 20px 28px;
+            border-radius: 8px; text-align: center; cursor: pointer; z-index: 30;
         }
+        /* ---- mobile controls ---- */
+        #mobileControls { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+        #joyZone {
+            position: absolute; left: 24px; bottom: 24px; width: 140px; height: 140px; border-radius: 50%;
+            background: rgba(255,255,255,0.07); border: 2px solid rgba(255,255,255,0.35); pointer-events: auto;
+        }
+        #joyStick {
+            position: absolute; left: 38px; top: 38px; width: 64px; height: 64px; border-radius: 50%;
+            background: rgba(255,207,63,0.65); border: 2px solid #fff;
+        }
+        .actBtn {
+            position: absolute; border-radius: 50%; border: 2px solid #fff; color: #fff; font-size: 12px;
+            display: flex; align-items: center; justify-content: center; pointer-events: auto; font-weight: bold;
+        }
+        #btnFire { right: 26px; bottom: 24px; width: 76px; height: 76px; background: rgba(255,60,60,0.5); }
+        #btnInteract { right: 26px; bottom: 108px; width: 62px; height: 62px; background: rgba(63,207,255,0.5); }
+        #btnJump { right: 108px; bottom: 24px; width: 62px; height: 62px; background: rgba(120,255,120,0.5); }
     </style>
 </head>
 <body>
-
+<div id="stage">
     <div id="click-to-start">
         <h2>КИБЕР-ТЕАТР DQOPD</h2>
-        <p>Кликни сюда для активации аудиосистемы и запуска игры</p>
+        <p>Кликни/тапни сюда для активации аудиосистемы и запуска игры</p>
     </div>
-
     <canvas id="gameCanvas" width="1280" height="720"></canvas>
+    <div id="mobileControls">
+        <div id="joyZone"><div id="joyStick"></div></div>
+        <div class="actBtn" id="btnInteract">USE</div>
+        <div class="actBtn" id="btnFire">FIRE</div>
+        <div class="actBtn" id="btnJump">JUMP</div>
+    </div>
+</div>
 
 <script>
+"use strict";
+/* ============================================================
+   КИБЕР-ТЕАТР DQOPD — HTML5 Canvas Edition v2
+   Все звуки процедурные (Web Audio, без файлов). Графика —
+   векторные примитивы canvas ("воксель-пиксель" стиль); это
+   плейсхолдер под реальный спрайт-лист/пиксель-арт, который
+   этот инструмент не умеет генерировать как изображение.
+   ============================================================ */
+
 // ----------------------------------------------------------------------
-//  ИНИЦИАЛИЗАЦИЯ И НАСТРОЙКИ Аудио
+//  RESPONSIVE STAGE SCALING (letterboxed, keeps 1280x720 logical res)
+// ----------------------------------------------------------------------
+const stage = document.getElementById('stage');
+function fitStage(){
+    const scale = Math.min(innerWidth / 1280, innerHeight / 720);
+    stage.style.transform = `scale(${scale})`;
+}
+addEventListener('resize', fitStage);
+fitStage();
+
+// ----------------------------------------------------------------------
+//  AUDIO
 // ----------------------------------------------------------------------
 let audioCtx = null;
 const startOverlay = document.getElementById('click-to-start');
-
 startOverlay.addEventListener('click', () => {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     startOverlay.style.display = 'none';
 });
+startOverlay.addEventListener('touchstart', (e) => { e.preventDefault(); startOverlay.click(); });
 
-// Синтезатор звуков "на лету" (аналог make_tone)
+const VOL = { music: 0.5, laser: 0.7, boss: 0.7, robot: 0.6 };
+
 function playTone(freq, duration, volume, type = 'square', slideTo = null) {
     if (!audioCtx) return;
     try {
         let osc = audioCtx.createOscillator();
         let gainNode = audioCtx.createGain();
-        
-        osc.type = type === 'noise' ? 'triangle' : type; // Нойс сэмулируем трианглом для простоты в один файл
+        osc.type = type === 'noise' ? 'triangle' : type;
         osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        
-        if (slideTo) {
-            osc.frequency.exponentialRampToValueAtTime(slideTo, audioCtx.currentTime + duration);
-        }
-        
-        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+        if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, audioCtx.currentTime + duration);
+        gainNode.gain.setValueAtTime(Math.max(0.0001, volume), audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-        
-        osc.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
-    } catch(e) {}
+        osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    } catch (e) {}
 }
 
 const sfx = {
-    laser: () => playTone(900, 0.10, 0.25, 'square', 220),
-    bossHit: () => playTone(120, 0.18, 0.30, 'square', 50),
-    bossCue: () => playTone(70, 0.35, 0.30, 'square', 30),
-    step: () => playTone(150, 0.04, 0.15, 'triangle'),
-    robotAtk: () => playTone(300, 0.12, 0.25, 'square', 150),
-    good: () => playTone(500, 0.08, 0.25, 'square', 900),
-    bad: () => playTone(200, 0.18, 0.25, 'square', 80),
-    stun: () => playTone(1200, 0.25, 0.25, 'triangle', 100),
-    portal: () => playTone(220, 0.6, 0.25, 'sine', 1200),
-    notes: [261, 293, 329, 392, 440, 523, 587]
+    laser: () => playTone(900, 0.10, 0.25 * VOL.laser, 'square', 220),
+    bossHit: () => playTone(120, 0.18, 0.30 * VOL.boss, 'square', 50),
+    bossCue: () => playTone(70, 0.35, 0.30 * VOL.boss, 'square', 30),
+    step: () => playTone(150, 0.04, 0.15 * VOL.robot, 'triangle'),
+    robotAtk: () => playTone(300, 0.12, 0.22 * VOL.robot, 'square', 150),
+    good: () => playTone(500, 0.08, 0.25 * VOL.robot, 'square', 900),
+    bad: () => playTone(200, 0.18, 0.25 * VOL.robot, 'square', 80),
+    stun: () => playTone(1200, 0.25, 0.25 * VOL.boss, 'triangle', 100),
+    portal: () => playTone(220, 0.6, 0.25 * VOL.robot, 'sine', 1200),
+    dodge: () => playTone(700, 0.12, 0.2 * VOL.boss, 'triangle', 1400),
+    heal: () => playTone(440, 0.2, 0.2 * VOL.robot, 'sine', 660),
 };
 
+// Distinct note palettes / tempo per area, selected in updateMusic()
+const MUSIC_PALETTES = {
+    arcadeIntro: { notes: [196, 220, 246, 262, 294], tempo: 0.30, wave: 'triangle', vol: 0.05 },
+    path:        { notes: [261, 293, 329, 392, 440, 523], tempo: 0.20, wave: 'square', vol: 0.05 },
+    island:      { notes: [329, 392, 440, 523, 587, 659], tempo: 0.45, wave: 'sine', vol: 0.045 },
+    boss:        { notes: [110, 130, 146, 164, 98], tempo: 0.12, wave: 'sawtooth', vol: 0.06 },
+};
+let musicTimer = 0;
+
+function currentMusicKey(){
+    if (G.state === 'MENU') return G.bgMode === 'arcade' ? 'arcadeIntro' : 'arcadeIntro';
+    if (G.state === 'ARENA') return 'boss';
+    if (G.state === 'PATH') {
+        const onIsl = G.islands.find(isl => Math.abs(G.player.x - isl.x) < isl.rx && Math.abs(G.player.y - isl.y) < isl.ry);
+        return onIsl ? 'island' : 'path';
+    }
+    return null;
+}
+function updateMusic(dt) {
+    const key = currentMusicKey();
+    if (!key) return;
+    musicTimer -= dt;
+    if (musicTimer <= 0) {
+        const pal = MUSIC_PALETTES[key];
+        const note = pal.notes[Math.floor(Math.random() * pal.notes.length)];
+        playTone(note, pal.tempo * 0.8, pal.vol * VOL.music, pal.wave);
+        if (Math.random() < 0.3) playTone(note / 2, pal.tempo, pal.vol * 0.7 * VOL.music, 'triangle');
+        musicTimer = pal.tempo;
+    }
+}
+
 // ----------------------------------------------------------------------
-//  ГЛОБАЛЬНЫЕ КОНСТАНТЫ И СОСТОЯНИЕ
+//  CONSTANTS
 // ----------------------------------------------------------------------
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
-const WIDTH = 1280;
-const HEIGHT = 720;
+const WIDTH = 1280, HEIGHT = 720;
 const GROUND_Y = Math.floor(HEIGHT * 0.72);
-const TILE = 64;
-const LASER_RANGE = 620;
-const LASER_SPEED = 15;
+const LASER_RANGE = 620, LASER_SPEED = 15;
 const ARENA_SCALE = 5.0;
 const ARENA_R = Math.min(WIDTH, HEIGHT) * 0.30 * ARENA_SCALE;
-const WORLD_START = -720;
-const BATTLE_START = 0;
-const WORLD_LENGTH = 9000;
+const WORLD_START = -720, BATTLE_START = 0, WORLD_LENGTH = 9000;
+
+// Exact per-kind stats from the design spec.
+const KIND_DEF = {
+    skeleton:  { hp: 35, speed: 1.3, meleeRange: 36, hitDmg: 8.0,  hitCd: 1.6, dps: 0,   auraSpeed: 1, auraDmg: 1 },
+    barman:    { hp: 10, speed: 1.0, meleeRange: 0,  hitDmg: 0,    hitCd: 0,   dps: 0,   ranged: true },
+    dancer:    { hp: 33, speed: 2.4, meleeRange: 50, hitDmg: 0,    hitCd: 0,   dps: 0.5, auraSpeed: 1.15, auraDmg: 1 },
+    clown:     { hp: 25, speed: 2.0, meleeRange: 34, hitDmg: 0,    hitCd: 0,   dps: 0.25, auraSpeed: 1, auraDmg: 1.15, jump: true, rareBonus: 3 },
+    ballerina: { hp: 30, speed: 0.8, meleeRange: 32, hitDmg: 0,    hitCd: 0,   dps: 2.0, auraSpeed: 1, auraDmg: 1 },
+};
 
 const MACHINE_TIERS = [
-    {tier: "basic",     cost: 15,  chance: 0.60, bmin: 5,  bmax: 15,  col: "#3fcfff"},
-    {tier: "advanced",  cost: 50,  chance: 0.40, bmin: 20, bmax: 35,  col: "#bf3fff"},
-    {tier: "legendary", cost: 150, chance: 0.20, bmin: 40, bmax: 70,  col: "#ffcf3f"}
+    { tier: "basic",     cost: 15,  chance: 0.60, bmin: 5,  bmax: 15, col: "#3fcfff" },
+    { tier: "advanced",  cost: 50,  chance: 0.40, bmin: 20, bmax: 35, col: "#bf3fff" },
+    { tier: "legendary", cost: 150, chance: 0.20, bmin: 40, bmax: 70, col: "#ffcf3f" },
 ];
 
 let G = {
-    state: "MENU",
-    t: 0,
-    bgMode: "curtain",
-    bgTimer: 60.0,
-    camX: 0,
-    message: "",
-    messageTimer: 0,
-    cardPopup: null,
-    battleActive: false,
-    arenaDarkness: 0,
-    screenShake: 0,
-    endText: "",
-    endAlpha: 0,
-    musicTimer: 0,
-    robots: [],
-    islands: [],
-    lasers: [],
-    enemyProj: [],
-    acidPool: [],
-    particles: [],
-    obstacles: [],
-    vents: [],
-    miniCopies: [],
-    portals: [],
+    state: "MENU", t: 0, bgMode: "curtain", bgTimer: 60.0, camX: 0,
+    message: "", messageTimer: 0, cardPopup: null, battleActive: false,
+    arenaDarkness: 0, screenShake: 0, endText: "", endAlpha: 0,
+    robots: [], islands: [], lasers: [], enemyProj: [], acidPool: [],
+    particles: [], obstacles: [], vents: [], miniCopies: [], portals: [],
     player: {
         x: WORLD_START + 60, y: 0, w: 46, h: 62, vy: 0, hopY: 0,
         onGround: true, jumpsLeft: 1, hp: 100, maxHp: 100, dmg: 14,
-        speed: 3.6, facing: 1, omp: 0, fireCd: 0, poisonTimer: 0,
-        ax: 0, ay: 0
+        speed: 3.6, facing: "right", aimDir: 1, omp: 0, fireCd: 0, poisonTimer: 0,
+        ax: 0, ay: 0, dodging: 0,
     },
-    boss: null
+    boss: null,
 };
 
-// Ввод
+// ----------------------------------------------------------------------
+//  INPUT (keyboard + mouse + touch joystick, 4-way facing)
+// ----------------------------------------------------------------------
 let keys = {};
 let mousePressed = false;
-window.addEventListener('keydown', e => { 
-    keys[e.code] = true; 
-    if(e.code === 'Space') I.jumpPressed = true;
-    if(e.code === 'KeyE') I.interact = true;
-    if(e.code === 'Escape' && (G.state === "LORE" || G.state === "SETTINGS")) G.state = "MENU";
-});
-window.addEventListener('keyup', e => { keys[e.code] = false; });
-window.addEventListener('mousedown', e => { if(e.button === 0) mousePressed = true; });
-window.addEventListener('mouseup', e => { if(e.button === 0) mousePressed = false; });
+let I = { x: 0, y: 0, fire: false, interact: false, jumpPressed: false, facing: "right", aimDir: 1 };
+let touchAxis = { x: 0, y: 0, active: false };
+let touchFire = false;
 
-let I = { x: 0, y: 0, fire: false, interact: false, jumpPressed: false, facing: 1 };
+addEventListener('keydown', e => {
+    if (!keys[e.code] && e.code === 'KeyE') I.interact = true;
+    if (e.code === 'Space') I.jumpPressed = true;
+    if (e.code === 'Escape' && (G.state === "LORE" || G.state === "SETTINGS")) G.state = "MENU";
+    keys[e.code] = true;
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('mousedown', e => { if (e.button === 0) mousePressed = true; });
+addEventListener('mouseup', e => { if (e.button === 0) mousePressed = false; });
 
 function pollInput() {
-    I.x = 0; I.y = 0;
-    if (keys['KeyA'] || keys['ArrowLeft']) I.x -= 1;
-    if (keys['KeyD'] || keys['ArrowRight']) I.x += 1;
-    if (keys['KeyW'] || keys['ArrowUp']) I.y -= 1;
-    if (keys['KeyS'] || keys['ArrowDown']) I.y += 1;
-    if (I.x !== 0) I.facing = I.x > 0 ? 1 : -1;
-    I.fire = keys['KeyF'] || mousePressed;
+    let ax = 0, ay = 0;
+    if (keys['KeyA'] || keys['ArrowLeft']) ax -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) ax += 1;
+    if (keys['KeyW'] || keys['ArrowUp']) ay -= 1;
+    if (keys['KeyS'] || keys['ArrowDown']) ay += 1;
+    if (touchAxis.active) { ax = touchAxis.x; ay = touchAxis.y; }
+    I.x = ax; I.y = ay;
+    I.fire = keys['KeyF'] || mousePressed || touchFire;
+    // 4-way facing: horizontal takes priority; aimDir persists for firing.
+    if (Math.abs(ax) < 0.15 && Math.abs(ay) < 0.15) return;
+    if (Math.abs(ax) >= Math.abs(ay)) {
+        I.facing = ax > 0 ? "right" : "left";
+        I.aimDir = ax > 0 ? 1 : -1;
+    } else {
+        I.facing = ay > 0 ? "front" : "back";
+    }
 }
 
+// touch joystick
+(function setupJoystick(){
+    const zone = document.getElementById('joyZone');
+    const stick = document.getElementById('joyStick');
+    let cx = 0, cy = 0;
+    const R = 46;
+    function start(e){ const r = zone.getBoundingClientRect(); cx = r.left + r.width/2; cy = r.top + r.height/2; move(e); }
+    function move(e){
+        const t = e.touches ? e.touches[0] : e;
+        let dx = t.clientX - cx, dy = t.clientY - cy;
+        const d = Math.hypot(dx, dy);
+        if (d > R) { dx = dx/d*R; dy = dy/d*R; }
+        stick.style.left = (38+dx) + 'px'; stick.style.top = (38+dy) + 'px';
+        touchAxis.x = dx/R; touchAxis.y = dy/R; touchAxis.active = true;
+    }
+    function end(){ touchAxis.active = false; touchAxis.x = 0; touchAxis.y = 0; stick.style.left='38px'; stick.style.top='38px'; }
+    zone.addEventListener('touchstart', e => { start(e); e.preventDefault(); });
+    zone.addEventListener('touchmove', e => { move(e); e.preventDefault(); });
+    zone.addEventListener('touchend', end);
+    zone.addEventListener('mousedown', e => { start(e); const mv=ev=>move(ev), up=()=>{end(); removeEventListener('mousemove',mv); removeEventListener('mouseup',up);}; addEventListener('mousemove',mv); addEventListener('mouseup',up); });
+})();
+function bindBtn(id, onDown, onUp){
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', e => { onDown(); e.preventDefault(); });
+    el.addEventListener('touchend', e => { onUp && onUp(); e.preventDefault(); });
+    el.addEventListener('mousedown', onDown);
+    el.addEventListener('mouseup', () => onUp && onUp());
+}
+bindBtn('btnFire', () => touchFire = true, () => touchFire = false);
+bindBtn('btnInteract', () => I.interact = true);
+bindBtn('btnJump', () => I.jumpPressed = true);
+
 // ----------------------------------------------------------------------
-//  УТИЛИТЫ КЛЭМПА И ОТРИСОВКИ
+//  UTIL
 // ----------------------------------------------------------------------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
-function showMessage(txt, sec) {
-    G.message = txt;
-    G.messageTimer = sec;
+function showMessage(txt, sec) { G.message = txt; G.messageTimer = sec; }
+function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n>>16)+amt, g=((n>>8)&255)+amt, b=(n&255)+amt;
+    r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
+    return `rgb(${r},${g},${b})`;
 }
-
 function drawText(txt, size, color, x, y, center = false, isBold = true) {
     ctx.fillStyle = "#000000";
     ctx.font = `${isBold ? 'bold ' : ''}${size}px Consolas`;
     ctx.textAlign = center ? "center" : "left";
-    ctx.fillText(txt, x + 2, y + 2); // Тень
+    ctx.fillText(txt, x + 2, y + 2);
     ctx.fillStyle = color;
     ctx.fillText(txt, x, y);
 }
-
 function drawVGradient(x, y, w, h, topC, botC, radius = 0) {
     if (w <= 0 || h <= 0) return;
     ctx.save();
-    if (radius > 0) {
-        ctx.beginPath();
-        ctx.roundRect(x, y, w, h, radius);
-        ctx.clip();
-    }
+    if (radius > 0) { ctx.beginPath(); ctx.roundRect(x, y, w, h, radius); ctx.clip(); }
     let grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, topC);
-    grad.addColorStop(1, botC);
-    ctx.fillStyle = grad;
-    ctx.fillRect(x, y, w, h);
+    grad.addColorStop(0, topC); grad.addColorStop(1, botC);
+    ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
     ctx.restore();
+}
+function drawShadow(x, y, w) {
+    ctx.beginPath(); ctx.ellipse(x, y - 6, w * 0.55, 8, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fill();
 }
 
 // ----------------------------------------------------------------------
-//  ГЕНЕРАЦИЯ МИРОВ И ОБЪЕКТОВ
+//  WORLD GENERATION
 // ----------------------------------------------------------------------
+function makeRobot(x, kind, lane) {
+    const d = KIND_DEF[kind];
+    return {
+        x, y: lane === 1 ? -30 : 0, w: 40, h: 54, vx: 0, vy: 0, kind, lane: lane || 0,
+        hp: d.hp, maxHp: d.hp, dead: false, fade: 0, attackCd: 0, atkSfxCd: 0,
+        stepCd: Math.random(), jumpCd: Math.random() * 2, grounded: true,
+    };
+}
+
 function generatePath() {
     G.robots = []; G.islands = []; G.lasers = []; G.enemyProj = []; G.acidPool = []; G.particles = [];
     G.battleActive = false;
-    
+
+    const kinds = ["skeleton", "barman", "dancer", "clown", "ballerina"];
     let x = BATTLE_START + 500;
-    let kinds = ["skeleton", "barman", "dancer", "clown", "ballerina"];
     while (x < WORLD_LENGTH - 400) {
-        let kind = kinds[Math.floor(Math.random() * kinds.length)];
-        let hpMap = {skeleton: 35, barman: 10, dancer: 33, clown: 25, ballerina: 30};
-        let speedMap = {dancer: 2.4, ballerina: 0.8, clown: 2.0, barman: 1.0, skeleton: 1.3};
-        G.robots.push({
-            x: x, y: 0, w: 40, h: 54, vx: 0, vy: 0, kind: kind,
-            hp: hpMap[kind], maxHp: hpMap[kind], dead: false, fade: 0,
-            attackCd: 0, stepCd: Math.random(), jumpCd: Math.random() * 2, grounded: true,
-            baseSpeed: speedMap[kind]
-        });
+        const kind = kinds[Math.floor(Math.random() * kinds.length)];
+        // second lane: ~30% of spawns walk in from a back row and converge on the hero
+        const lane = Math.random() < 0.3 ? 1 : 0;
+        G.robots.push(makeRobot(x, kind, lane));
         x += 240 + Math.random() * 180;
     }
 
     for (let i = 0; i < 4; i++) {
-        let ix = 1800 + i * 2200;
-        let machines = MACHINE_TIERS.map((tier, idx) => ({
-            ...tier, ox: (idx - 1) * 90, oy: 10, cooldown: 0
+        const ix = 1800 + i * 2200;
+        const machines = MACHINE_TIERS.map((tier, idx) => ({
+            ...tier, ox: idx === 0 ? -70 : idx === 1 ? 70 : 0, oy: 6, cooldown: 0,
         }));
-        G.islands.push({ x: ix, y: 0, rx: 180, ry: 100, domeOn: false, machines: machines });
+        // corridor entrance: dark rectangular alcove, grass/tree oval border, shield button centered
+        G.islands.push({ x: ix, y: 0, rx: 170, ry: 95, domeOn: false, machines });
     }
-    
+
     G.player.x = WORLD_START + 60; G.player.y = 0; G.player.omp = 0; G.player.hp = G.player.maxHp;
 }
 
@@ -247,293 +340,275 @@ function generateArena() {
     G.robots = []; G.lasers = []; G.miniCopies = []; G.enemyProj = []; G.acidPool = []; G.particles = [];
     G.obstacles = []; G.vents = []; G.portals = [];
     G.arenaDarkness = 0; G.screenShake = 0;
-    
+
     G.boss = {
         x: 0, y: 0, w: 90, h: 130, hp: 900, maxHp: 900, phaseIdx: 0,
         stunTimer: 0, attackTimer: 3.0, currentAttack: null, alive: true,
-        dodgeCd: 0, targetX: 0, targetY: 0, moveTimer: 1.0, seismicTelegraph: 0, successFaceTimer: 0
+        dodgeCd: 0, targetX: 0, targetY: 0, moveTimer: 1.0, seismicTelegraph: 0,
+        successFaceTimer: 0, hopY: 0,
     };
-    
     G.player.ax = 0; G.player.ay = 0; G.player.hp = G.player.maxHp;
 
-    for(let i=0; i<8; i++) {
-        let ang = (i / 8) * Math.PI * 2 + (Math.random() * 0.2 - 0.1);
-        let dist = 100 + Math.random() * (ARENA_R * 0.45);
+    for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + (Math.random() * 0.2 - 0.1);
+        const dist = 100 + Math.random() * (ARENA_R * 0.45);
         G.obstacles.push({ x: Math.cos(ang)*dist, y: Math.sin(ang)*dist, w: 56, h: 56 });
     }
-    for(let i=0; i<6; i++) {
-        let ang = (i / 6) * Math.PI * 2 + Math.PI / 6;
-        G.vents.push({ x: Math.cos(ang) * ARENA_R * 0.42, y: Math.sin(ang) * ARENA_R * 0.42, r: 34, active: false, timer: 0 });
+    for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        G.vents.push({ x: Math.cos(ang)*ARENA_R*0.42, y: Math.sin(ang)*ARENA_R*0.42, r: 34, active: false, timer: 0 });
     }
 }
 
 function spawnBurst(x, y, color, n = 16) {
     for (let i = 0; i < n; i++) {
-        G.particles.push({
-            x: x, y: y,
-            vx: (Math.random() * 8 - 4), vy: (Math.random() * 8 - 4),
-            life: 0.35 + Math.random() * 0.35, color: color
-        });
+        G.particles.push({ x, y, vx: Math.random()*8-4, vy: Math.random()*8-4, life: 0.35+Math.random()*0.35, color });
     }
 }
 
-function tryUseMachine(m, mx, my) {
+// ----------------------------------------------------------------------
+//  ARCADE MACHINE ECONOMY
+// ----------------------------------------------------------------------
+function tryUseMachine(m) {
     if (G.cardPopup) return;
     if (m.cooldown > 0) { showMessage("АВТОМАТ ПЕРЕЗАРЯЖАЕТСЯ", 1.0); return; }
     if (G.player.omp < m.cost) { sfx.bad(); showMessage("НЕДОСТАТОЧНО ОМП!", 1.0); return; }
-    
     G.player.omp -= m.cost;
     m.cooldown = 20.0;
-    G.cardPopup = { machine: m, timer: 1.6, stage: "spin", spinT: 0, success: null, bonus: 0, worldPos: [mx, my] };
+    G.cardPopup = { machine: m, timer: 1.6, stage: "spin", spinT: 0, success: null, bonus: 0 };
 }
-
 function resolveCardPopup(dt) {
-    let pop = G.cardPopup;
-    if (!pop) return;
+    const pop = G.cardPopup; if (!pop) return;
     pop.spinT += dt;
     if (pop.stage === "spin" && pop.spinT > 0.9) {
         pop.stage = "result";
         pop.success = Math.random() < pop.machine.chance;
         if (pop.success) {
             pop.bonus = pop.machine.bmin + Math.random() * (pop.machine.bmax - pop.machine.bmin);
-            let tier = pop.machine.tier;
-            if (tier === "basic") {
-                G.player.hp = Math.min(G.player.maxHp, G.player.hp + 25);
-                showMessage(`КАРТА ВЫИГРАНА: +25 ХП (${pop.bonus.toFixed(0)}%)`, 1.6);
-            } else if (tier === "advanced") {
-                G.player.dmg += 4;
-                showMessage(`КАРТА ВЫИГРАНА: УРОН +4 (${pop.bonus.toFixed(0)}%)`, 1.6);
-            } else {
-                G.player.maxHp += 30; G.player.hp += 30;
-                showMessage(`ЛЕГЕНДАРНАЯ КАРТА: МАКС.ХП +30 (${pop.bonus.toFixed(0)}%)`, 1.6);
-            }
+            const tier = pop.machine.tier;
+            if (tier === "basic") { G.player.hp = Math.min(G.player.maxHp, G.player.hp + 25); showMessage(`КАРТА ВЫИГРАНА: +25 ХП (${pop.bonus.toFixed(0)}%)`, 1.6); }
+            else if (tier === "advanced") { G.player.dmg += 4; showMessage(`КАРТА ВЫИГРАНА: УРОН +4 (${pop.bonus.toFixed(0)}%)`, 1.6); }
+            else { G.player.maxHp += 30; G.player.hp += 30; showMessage(`ЛЕГЕНДАРНАЯ КАРТА: МАКС.ХП +30 (${pop.bonus.toFixed(0)}%)`, 1.6); }
             sfx.good();
-        } else {
-            showMessage("КАРТА СГОРЕЛА. ОСКОЛКИ ПОТЕРЯНЫ.", 1.4);
-            sfx.bad();
-        }
+        } else { showMessage("КАРТА СГОРЕЛА. ОСКОЛКИ ПОТЕРЯНЫ.", 1.4); sfx.bad(); }
         pop.timer = 1.6;
     }
-    if (pop.stage === "result") {
-        pop.timer -= dt;
-        if (pop.timer <= 0) G.cardPopup = null;
-    }
+    if (pop.stage === "result") { pop.timer -= dt; if (pop.timer <= 0) G.cardPopup = null; }
 }
 
 // ----------------------------------------------------------------------
-//  ОБНОВЛЕНИЕ ЛОГИКИ ТРОПЫ И АРЕНЫ
+//  PATH UPDATE
 // ----------------------------------------------------------------------
-function updateMusic(dt) {
-    G.musicTimer -= dt;
-    if (G.musicTimer <= 0) {
-        let f = sfx.notes[Math.floor(Math.random() * sfx.notes.length)];
-        playTone(f, 0.16, 0.05, 'square');
-        G.musicTimer = 0.22;
-    }
+function isInsideIsland(isl, x, y) {
+    const nx = (x - isl.x) / isl.rx, ny = (y - isl.y) / isl.ry;
+    return nx*nx + ny*ny <= 1;
 }
 
 function updatePath(dt) {
-    let p = G.player;
+    const p = G.player;
     if (G.cardPopup) resolveCardPopup(dt);
-    
-    let nextX = p.x + I.x * p.speed * 1.6;
-    let nextY = p.y + I.y * p.speed * 1.6;
-    
-    let onIsland = null;
-    for (let isl of G.islands) {
-        if (Math.abs(nextX - isl.x) < isl.rx && Math.abs(nextY - isl.y) < isl.ry) {
-            onIsland = isl; break;
-        }
-    }
-    
-    if (onIsland) { p.x = nextX; p.y = nextY; }
-    else { p.x = nextX; p.y += (0 - p.y) * 0.2; }
-    
+
+    const onIslandBefore = G.islands.find(isl => isInsideIsland(isl, p.x, p.y));
+    p.x += I.x * p.speed * 1.6;
+    if (onIslandBefore) p.y += I.y * p.speed * 1.6;
+    else if (p.y !== 0) { p.y += (0 - p.y) * Math.min(1, dt*8); if (Math.abs(p.y) < 0.5) p.y = 0; }
+
     p.x = clamp(p.x, WORLD_START + 20, WORLD_LENGTH - 20);
     G.camX = clamp(p.x - WIDTH * 0.35, WORLD_START - 40, WORLD_LENGTH - WIDTH);
+
+    // re-check AFTER moving so leaving the corridor in any direction is never blocked
+    const onIsland = G.islands.find(isl => isInsideIsland(isl, p.x, p.y));
+    if (!onIsland) p.y = 0;
 
     if (p.x >= BATTLE_START && !G.battleActive) {
         G.battleActive = true;
         showMessage("ВНИМАНИЕ: ТЕАТРАЛЬНЫЕ КУКЛЫ АКТИВИРОВАНЫ", 2.0);
     }
 
-    if (I.jumpPressed) {
-        if (p.jumpsLeft > 0) { p.vy = -9.5; p.onGround = false; p.jumpsLeft--; }
-        I.jumpPressed = false;
-    }
+    if (I.jumpPressed) { if (p.jumpsLeft > 0) { p.vy = -9.5; p.onGround = false; p.jumpsLeft--; } I.jumpPressed = false; }
     p.vy += 0.5; p.hopY += p.vy;
     if (p.hopY >= 0) { p.hopY = 0; p.vy = 0; p.onGround = true; p.jumpsLeft = 1; }
 
-    if (I.interact && onIsland && !G.cardPopup) {
-        let used = false;
-        for (let m of onIsland.machines) {
-            let mx = onIsland.x + m.ox, my = onIsland.y + m.oy;
-            if (Math.hypot(p.x - mx, p.y - my) < 46 && m.cooldown <= 0) {
-                tryUseMachine(m, mx, my); used = true; break;
+    // single-tap interact: use a nearby machine, else toggle the shield on/off
+    if (I.interact) {
+        if (onIsland && !G.cardPopup) {
+            let used = false;
+            for (const m of onIsland.machines) {
+                const mx = onIsland.x + m.ox, my = onIsland.y + m.oy;
+                if (Math.hypot(p.x - mx, p.y - my) < 46 && m.cooldown <= 0) { tryUseMachine(m); used = true; break; }
             }
-        }
-        if (!used) {
-            onIsland.domeOn = !onIsland.domeOn;
-            showMessage("ЗАЩИТНЫЙ КУПОЛ " + (onIsland.domeOn ? "АКТИВИРОВАН" : "ДЕАКТИВИРОВАН"), 1.4);
+            if (!used) {
+                onIsland.domeOn = !onIsland.domeOn;
+                showMessage("ЗАЩИТНЫЙ ЩИТ " + (onIsland.domeOn ? "АКТИВИРОВАН" : "ДЕАКТИВИРОВАН"), 1.4);
+            }
         }
         I.interact = false;
     }
-
-    for (let isl of G.islands) {
-        for (let m of isl.machines) { if (m.cooldown > 0) m.cooldown -= dt; }
-    }
+    for (const isl of G.islands) for (const m of isl.machines) if (m.cooldown > 0) m.cooldown -= dt;
 
     if (I.fire && p.fireCd <= 0) {
-        G.lasers.push({ x: p.x, y: p.y - 12, startX: p.x, dir: I.facing, dead: false });
+        G.lasers.push({ x: p.x, y: p.y - 12, startX: p.x, dir: I.aimDir, dead: false });
         sfx.laser(); p.fireCd = 0.18;
     }
     if (p.fireCd > 0) p.fireCd -= dt;
-    for (let l of G.lasers) {
-        l.x += l.dir * LASER_SPEED;
-        if (Math.abs(l.x - l.startX) > LASER_RANGE) l.dead = true;
-    }
+    for (const l of G.lasers) { l.x += l.dir * LASER_SPEED; if (Math.abs(l.x - l.startX) > LASER_RANGE) l.dead = true; }
     G.lasers = G.lasers.filter(l => !l.dead);
 
-    for (let pr of G.enemyProj) {
+    for (const pr of G.enemyProj) {
         pr.x += pr.vx; pr.y += pr.vy; pr.vy += 0.25; pr.life -= dt;
         if (pr.y >= 0 || pr.life <= 0) { G.acidPool.push({ x: pr.x, y: 0, r: 40, life: 4.0 }); pr.dead = true; }
     }
     G.enemyProj = G.enemyProj.filter(pr => !pr.dead);
 
-    for (let pool of G.acidPool) {
+    for (const pool of G.acidPool) {
         pool.life -= dt;
-        if (Math.abs(p.x - pool.x) < pool.r && Math.abs(p.y - pool.y) < 30) { p.hp -= 3.0 * dt; p.poisonTimer = 1.2; }
+        if (Math.abs(p.x - pool.x) < pool.r && Math.abs(p.y - pool.y) < 30) { p.hp -= 1.0 * dt; p.poisonTimer = 3.0; }
     }
     G.acidPool = G.acidPool.filter(a => a.life > 0);
+    if (p.poisonTimer > 0) { p.hp -= 0.10 * dt; p.poisonTimer -= dt; }
 
-    if (G.battleActive) {
-        for (let r of G.robots) {
-            if (r.dead) continue;
-            let withinDome = null;
-            for (let isl of G.islands) {
-                if (Math.abs(r.x - isl.x) < isl.rx + 10 && isl.domeOn) { withinDome = isl; break; }
-            }
-            if (withinDome) { r.x += (r.x < withinDome.x) ? -4 : 4; continue; }
+    if (G.battleActive) updatePathRobots(dt);
 
-            let buffedDancer = G.robots.some(d => !d.dead && d.kind === "dancer" && Math.abs(d.x - r.x) < 300);
-            let buffedClown = G.robots.some(c => !c.dead && c.kind === "clown" && Math.abs(c.x - r.x) < 300);
-            let speed = r.baseSpeed * (buffedDancer ? 1.3 : 1.0);
-            let dist = p.x - r.x;
-
-            if (r.kind === "barman") {
-                if (Math.abs(dist) > 220 && Math.abs(dist) < 500) {
-                    r.vx = 0; r.attackCd -= dt;
-                    if (r.attackCd <= 0) {
-                        G.enemyProj.push({ x: r.x, y: -40, vx: dist * 0.02, vy: -7, dmg: 6, life: 3.0, dead: false });
-                        r.attackCd = 1.8;
-                    }
-                } else if (Math.abs(dist) <= 220) { r.vx = dist !== 0 ? -Math.sign(dist) * speed : speed; }
-                else { r.vx = dist !== 0 ? Math.sign(dist) * speed : speed; }
-            } else if (r.kind === "clown") {
-                r.jumpCd -= dt;
-                if (r.grounded && r.jumpCd <= 0 && Math.abs(dist) < 400) { r.vy = -10; r.grounded = false; r.jumpCd = 1.5 + Math.random() * 1.0; }
-                r.vy += 0.4; r.y += r.vy;
-                if (r.y >= 0) { r.y = 0; r.vy = 0; r.grounded = true; }
-                r.vx = dist !== 0 ? Math.sign(dist) * speed : speed;
-            } else {
-                if (Math.abs(dist) < 450) {
-                    r.vx = dist !== 0 ? Math.sign(dist) * speed : speed;
-                    r.stepCd -= dt;
-                    if (r.stepCd <= 0 && r.grounded) { sfx.step(); r.stepCd = 0.4; }
-                } else { r.vx = 0; }
-            }
-
-            r.x += r.vx; r.attackCd -= dt;
-            if (Math.abs(dist) < 36 && Math.abs(p.y - r.y) < 35 && r.attackCd <= 0) {
-                let mult = buffedClown ? 1.4 : 1.0;
-                let dmgMap = {ballerina: 3.0, dancer: 6.0, clown: 5.0, barman: 4.0, skeleton: 8.0};
-                let cdMap = {ballerina: 0.5, dancer: 1.4, clown: 1.1, barman: 1.6, skeleton: 1.6};
-                p.hp -= dmgMap[r.kind] * mult; sfx.robotAtk(); r.attackCd = cdMap[r.kind];
-            }
-        }
-
-        for (let l of G.lasers) {
-            for (let r of G.robots) {
-                if (!r.dead && Math.abs(l.x - r.x) < 30 && Math.abs(l.y - (r.y - 15)) < 40) {
-                    r.hp -= p.dmg; l.dead = true;
-                    if (r.hp <= 0) { r.dead = true; p.omp += 15 + Math.floor(Math.random() * 10); spawnBurst(r.x, r.y - 25, "#9696a0"); }
-                }
-            }
-        }
-    }
-
-    for (let r of G.robots) { if (r.dead) r.fade++; }
+    for (const r of G.robots) if (r.dead) r.fade++;
     G.robots = G.robots.filter(r => !(r.dead && r.fade > 20));
 
     if (p.hp <= 0) { p.hp = p.maxHp; p.x = WORLD_START + 60; p.y = 0; showMessage("СИСТЕМЫ ПЕРЕЗАГРУЖЕНЫ. ПОПЫТКА СНАЧАЛА.", 2.0); }
     if (p.x > WORLD_LENGTH - 120) { G.state = "ARENA"; generateArena(); showMessage("ГРАНДИОЗНЫЙ КИБЕР-АНГАР: АРЕНА DQOPD", 2.5); }
 }
 
-function hitBoss(dmg) {
-    let b = G.boss;
-    if (b.stunTimer > 0) { b.hp -= dmg; sfx.bossHit(); spawnBurst(b.x, b.y, "#ff5555"); checkBossPhase(); return; }
-    if (b.dodgeCd <= 0 && Math.random() < 0.20) {
-        b.dodgeCd = 4.0; b.x += (Math.random() > 0.5 ? -110 : 110); b.y += (Math.random() > 0.5 ? -80 : 80);
-        showMessage("DQOPD УКЛОНИЛСЯ!", 0.8);
-    } else {
-        b.hp -= dmg; sfx.bossHit(); spawnBurst(b.x, b.y, "#ff5555"); checkBossPhase();
+function updatePathRobots(dt) {
+    const p = G.player;
+    for (const r of G.robots) {
+        if (r.dead) continue;
+        const d = KIND_DEF[r.kind];
+        const withinDome = G.islands.find(isl => Math.abs(r.x - isl.x) < isl.rx + 10 && isl.domeOn);
+        if (withinDome) { r.x += (r.x < withinDome.x) ? -4 : 4; continue; }
+
+        const auraSpeed = G.robots.some(o => !o.dead && o.kind === "dancer" && Math.abs(o.x - r.x) < 300) ? KIND_DEF.dancer.auraSpeed : 1;
+        const auraDmg = G.robots.some(o => !o.dead && o.kind === "clown" && Math.abs(o.x - r.x) < 300) ? KIND_DEF.clown.auraDmg : 1;
+        const speed = d.speed * auraSpeed;
+        const dist = p.x - r.x;
+
+        if (d.ranged) { // barman: keeps range, lobs acid, backs off if too close
+            if (Math.abs(dist) > 220 && Math.abs(dist) < 500) {
+                r.vx = 0; r.attackCd -= dt;
+                if (r.attackCd <= 0) { G.enemyProj.push({ x: r.x, y: -40, vx: dist*0.02, vy: -7, dmg: 0, life: 3.0, dead: false }); r.attackCd = 1.8; }
+            } else if (Math.abs(dist) <= 220) r.vx = dist !== 0 ? -Math.sign(dist)*speed : speed;
+            else r.vx = dist !== 0 ? Math.sign(dist)*speed : speed;
+        } else if (d.jump) { // clown: hops toward the player
+            r.jumpCd -= dt;
+            if (r.grounded && r.jumpCd <= 0 && Math.abs(dist) < 400) { r.vy = -10; r.grounded = false; r.jumpCd = 1.5 + Math.random(); }
+            r.vy += 0.4; r.y += r.vy;
+            if (r.y >= (r.lane === 1 ? -30 : 0)) { r.y = (r.lane === 1 ? -30 : 0); r.vy = 0; r.grounded = true; }
+            r.vx = dist !== 0 ? Math.sign(dist)*speed : speed;
+        } else {
+            if (Math.abs(dist) < 450) {
+                r.vx = dist !== 0 ? Math.sign(dist)*speed : speed;
+                r.stepCd -= dt;
+                if (r.stepCd <= 0 && r.grounded) { sfx.step(); r.stepCd = 0.4; }
+            } else r.vx = 0;
+        }
+        r.x += r.vx;
+
+        // converge back-lane robots toward the main lane as they approach the player
+        if (r.lane === 1 && Math.abs(dist) < 260) r.y += (0 - r.y) * Math.min(1, dt * 1.5);
+
+        const inRange = Math.abs(dist) < d.meleeRange && Math.abs(p.y - r.y) < 40;
+        if (d.dps > 0 && inRange) {
+            p.hp -= d.dps * auraDmg * dt;
+            r.atkSfxCd -= dt;
+            if (r.atkSfxCd <= 0) { sfx.robotAtk(); r.atkSfxCd = 0.3; }
+        } else if (d.hitDmg > 0) {
+            r.attackCd -= dt;
+            if (inRange && r.attackCd <= 0) { p.hp -= d.hitDmg * auraDmg; sfx.robotAtk(); r.attackCd = d.hitCd; }
+        }
+    }
+
+    for (const l of G.lasers) {
+        for (const r of G.robots) {
+            if (!r.dead && Math.abs(l.x - r.x) < 30 && Math.abs(l.y - (r.y - 15)) < 40) {
+                r.hp -= p.dmg; l.dead = true;
+                if (r.hp <= 0) {
+                    r.dead = true;
+                    p.omp += 15 + Math.floor(Math.random()*10);
+                    const kd = KIND_DEF[r.kind];
+                    if (kd.rareBonus && Math.random() < 0.2) p.omp += kd.rareBonus;
+                    spawnBurst(r.x, r.y - 25, "#9696a0");
+                }
+            }
+        }
     }
 }
 
+// ----------------------------------------------------------------------
+//  ARENA UPDATE (boss abilities per spec)
+// ----------------------------------------------------------------------
+function hitBoss(dmg) {
+    const b = G.boss;
+    if (b.stunTimer > 0) { b.hp -= dmg; sfx.bossHit(); spawnBurst(b.x, b.y, "#ff5555"); b.successFaceTimer = 0; checkBossPhase(); return; }
+    if (b.dodgeCd <= 0) {
+        if (Math.random() < 0.20) {
+            b.dodgeCd = 20.0; // successful dodge: long cooldown
+            b.x += (Math.random() > 0.5 ? -110 : 110); b.y += (Math.random() > 0.5 ? -80 : 80);
+            sfx.dodge(); showMessage("DQOPD УКЛОНИЛСЯ!", 0.8);
+            return;
+        }
+        b.dodgeCd = 10.0; // failed attempt: shorter cooldown before it can try again
+    }
+    b.hp -= dmg; sfx.bossHit(); spawnBurst(b.x, b.y, "#ff5555"); checkBossPhase();
+}
+
 function checkBossPhase() {
-    let b = G.boss; let pct = b.hp / b.maxHp;
-    let target = pct > 0.75 ? 0 : pct > 0.5 ? 1 : pct > 0.25 ? 2 : pct > 0 ? 3 : 4;
+    const b = G.boss; const pct = b.hp / b.maxHp;
+    const target = pct > 0.75 ? 0 : pct > 0.5 ? 1 : pct > 0.25 ? 2 : pct > 0 ? 3 : 4;
     if (target > b.phaseIdx) { b.phaseIdx = target; b.stunTimer = 3.0; b.currentAttack = null; sfx.stun(); showMessage("DQOPD ОГЛУШЁН ГЛИТЧЕМ ТВ-ЭКРАНА!", 1.6); }
 }
 
 function startBossAttack() {
-    let b = G.boss; let attacks = ["seismic", "summon", "gas", "darkness", "barrage"];
-    let a = attacks[Math.floor(Math.random() * attacks.length)];
+    const b = G.boss;
+    const attacks = ["seismic", "summon", "gas", "darkness"];
+    const a = attacks[Math.floor(Math.random() * attacks.length)];
     b.currentAttack = a; sfx.bossCue();
     if (a === "seismic") b.seismicTelegraph = 1.2;
-    else if (a === "gas") { for(let v of G.vents) { v.active = true; v.timer = 4.0; } showMessage("ВНИМАНИЕ: КЛАПАНЫ ВЕНТИЛЯЦИИ!", 1.4); }
+    else if (a === "gas") { for (const v of G.vents) { v.active = true; v.timer = 4.0; } showMessage("ВНИМАНИЕ: КЛАПАНЫ ВЕНТИЛЯЦИИ!", 1.4); }
     else if (a === "summon") {
-        G.miniCopies.push({kind:"mini_clown", x:b.x-60, y:b.y+60, hp:15, maxHp:15, cd:0, noseCd:1.5, dead:false});
-        G.miniCopies.push({kind:"mini_ballerina", x:b.x+60, y:b.y-60, hp:15, maxHp:15, cd:0, dead:false});
-        G.miniCopies.push({kind:"mini_dancer", x:b.x, y:b.y+80, hp:15, maxHp:15, cd:0, healCd:2.0, dead:false});
+        const mk = (kind, x, y) => {
+            const full = KIND_DEF[kind];
+            G.miniCopies.push({ kind: "mini_" + kind, x, y, hp: Math.round(full.hp/2), maxHp: Math.round(full.hp/2), cd: 0, noseCd: 5.0, healCd: 60.0, dead: false });
+        };
+        mk("clown", b.x-60, b.y+60); mk("ballerina", b.x+60, b.y-60); mk("dancer", b.x, b.y+80);
         showMessage("DQOPD МАТЕРИАЛИЗОВАЛ МИНИ-КУКОЛ!", 1.6);
     } else if (a === "darkness") { G.arenaDarkness = 1.0; showMessage("СВЕТ ПОГАС! ЗАЖЖЕНЫ СВЕЧИ КИБЕР-ШОУ", 1.8); }
-    else if (a === "barrage") {
-        let p = G.player;
-        for(let i=0; i<3; i++) {
-            let ang = Math.atan2(p.ay - b.y, p.ax - b.x) + (Math.random()*0.6 - 0.3);
-            G.enemyProj.push({ x:b.x, y:b.y, vx:Math.cos(ang)*6, vy:Math.sin(ang)*6, dmg:9, life:2.5, kind:"barrage", dead:false });
-        }
-        showMessage("DQOPD ОТКРЫВАЕТ ОГОНЬ!", 1.2);
-    }
     b.attackTimer = 5 + Math.random() * 3;
 }
 
 function updateArena(dt) {
-    let p = G.player; let b = G.boss; if(!b) return;
+    const p = G.player, b = G.boss; if (!b) return;
     if (b.successFaceTimer > 0) b.successFaceTimer -= dt;
     if (b.dodgeCd > 0) b.dodgeCd -= dt;
 
     let nextX = p.ax + I.x * p.speed * 1.4;
     let nextY = p.ay + I.y * p.speed * 1.4;
-    for (let obs of G.obstacles) {
-        if (Math.abs(nextX - obs.x) < obs.w/2 + 12 && Math.abs(nextY - obs.y) < obs.h/2 + 12) { nextX = p.ax; nextY = p.ay; }
+    for (const obs of G.obstacles) {
+        if (Math.abs(nextX - obs.x) < obs.w/2+12 && Math.abs(nextY - obs.y) < obs.h/2+12) { nextX = p.ax; nextY = p.ay; }
     }
     p.ax = nextX; p.ay = nextY;
-    
-    let distC = Math.hypot(p.ax, p.ay);
-    if (distC > ARENA_R - 40) { let ang = Math.atan2(p.ay, p.ax); p.ax = Math.cos(ang)*(ARENA_R - 40); p.ay = Math.sin(ang)*(ARENA_R - 40); }
+    const distC = Math.hypot(p.ax, p.ay);
+    if (distC > ARENA_R - 40) { const ang = Math.atan2(p.ay, p.ax); p.ax = Math.cos(ang)*(ARENA_R-40); p.ay = Math.sin(ang)*(ARENA_R-40); }
 
-    if (I.fire && p.fireCd <= 0) { G.lasers.push({ x: p.ax, y: p.ay, startX: p.ax, dir: I.facing, dead: false }); sfx.laser(); p.fireCd = 0.18; }
+    if (I.jumpPressed) { p.dodging = 12; I.jumpPressed = false; }
+    if (p.dodging > 0) p.dodging--;
+
+    if (I.fire && p.fireCd <= 0) { G.lasers.push({ x: p.ax, y: p.ay, startX: p.ax, dir: I.aimDir, dead: false }); sfx.laser(); p.fireCd = 0.18; }
     if (p.fireCd > 0) p.fireCd -= dt;
 
-    for (let l of G.lasers) {
+    for (const l of G.lasers) {
         l.x += l.dir * LASER_SPEED;
         if (Math.abs(l.x - l.startX) > LASER_RANGE * ARENA_SCALE * 0.4) l.dead = true;
-        for (let obs of G.obstacles) { if (Math.abs(l.x - obs.x) < obs.w/2 && Math.abs(l.y - obs.y) < obs.h/2) l.dead = true; }
-        if (!l.dead && b.alive && Math.hypot(l.x - b.x, l.y - b.y) < 70) { l.dead = true; hitBoss(p.dmg); }
-        for (let m of G.miniCopies) {
-            if (!m.dead && !l.dead && Math.hypot(l.x - m.x, l.y - m.y) < 26) {
+        for (const obs of G.obstacles) if (Math.abs(l.x-obs.x) < obs.w/2 && Math.abs(l.y-obs.y) < obs.h/2) l.dead = true;
+        if (!l.dead && b.alive && Math.hypot(l.x-b.x, l.y-b.y) < 70) { l.dead = true; hitBoss(p.dmg); }
+        for (const m of G.miniCopies) {
+            if (!m.dead && !l.dead && Math.hypot(l.x-m.x, l.y-m.y) < 26) {
                 l.dead = true; m.hp -= p.dmg; spawnBurst(m.x, m.y, "#ff9696");
                 if (m.hp <= 0) { m.dead = true; p.omp += 8 + Math.floor(Math.random()*6); sfx.good(); }
             }
@@ -542,78 +617,92 @@ function updateArena(dt) {
     G.lasers = G.lasers.filter(l => !l.dead);
     G.miniCopies = G.miniCopies.filter(m => !m.dead);
 
-    for (let pr of G.enemyProj) {
+    for (const pr of G.enemyProj) {
         pr.x += pr.vx; pr.y += pr.vy; pr.life -= dt;
-        if (Math.hypot(pr.x - p.ax, pr.y - p.ay) < 26) { p.hp -= pr.dmg; b.successFaceTimer = 1.0; pr.dead = true; }
+        if (!p.dodging && Math.hypot(pr.x-p.ax, pr.y-p.ay) < 26) { p.hp -= pr.dmg; b.successFaceTimer = 1.0; pr.dead = true; }
         else if (pr.life <= 0 || Math.hypot(pr.x, pr.y) > ARENA_R + 80) pr.dead = true;
     }
     G.enemyProj = G.enemyProj.filter(pr => !pr.dead);
 
-    if (b.stunTimer > 0) b.stunTimer -= dt;
+    if (b.stunTimer > 0) { b.stunTimer -= dt; b.hopY = 0; }
     else if (b.alive) {
         b.attackTimer -= dt; if (b.attackTimer <= 0) startBossAttack();
         b.moveTimer -= dt;
-        if (b.moveTimer <= 0) { b.targetX = p.ax + (Math.random()*440 - 220); b.targetY = p.ay + (Math.random()*440 - 220); b.moveTimer = 1.0 + Math.random()*1.5; }
-        let bd = Math.hypot(b.targetX - b.x, b.targetY - b.y);
-        if (bd > 20) { b.x += (b.targetX - b.x)/bd*3.0; b.y += (b.targetY - b.y)/bd*3.0; }
-        
+        if (b.moveTimer <= 0) { b.targetX = p.ax + (Math.random()*440-220); b.targetY = p.ay + (Math.random()*440-220); b.moveTimer = 1.0+Math.random()*1.5; }
+        const bd = Math.hypot(b.targetX-b.x, b.targetY-b.y);
+        if (bd > 20) { b.x += (b.targetX-b.x)/bd*3.0; b.y += (b.targetY-b.y)/bd*3.0; }
+
         if (b.currentAttack === "seismic" && b.seismicTelegraph > 0) {
+            // jump-then-slam: rises during the telegraph, slams down at impact
+            const progress = 1 - (b.seismicTelegraph / 1.2);
+            b.hopY = -Math.sin(progress * Math.PI) * 46;
             b.seismicTelegraph -= dt;
             if (b.seismicTelegraph <= 0) {
-                G.screenShake = 2.0;
-                let dist = Math.hypot(p.ax - b.x, p.ay - b.y);
-                let hidden = G.obstacles.some(o => Math.hypot(o.x - p.ax, o.y - p.ay) < 50);
-                if (dist < ARENA_R * 0.35 && !hidden) { p.hp -= 25; b.successFaceTimer = 1.0; }
+                b.hopY = 0; G.screenShake = 2.0;
+                const dist = Math.hypot(p.ax-b.x, p.ay-b.y);
+                const hidden = G.obstacles.some(o => Math.hypot(o.x-p.ax, o.y-p.ay) < 50);
+                if (dist < ARENA_R*0.4 && !hidden && !p.dodging) { p.hp -= 3.0; b.successFaceTimer = 1.0; }
                 b.currentAttack = null;
             }
-        }
+        } else { b.hopY *= 0.8; }
         if (G.arenaDarkness > 0 && b.currentAttack !== "darkness") G.arenaDarkness -= dt * 0.25;
+        // darkness lets DQOPD dodge more often — he's hiding among the candles
+        b.dodgeBonus = (b.currentAttack === "darkness" || G.arenaDarkness > 0.3) ? 0.15 : 0;
     }
 
-    for (let m of G.miniCopies) {
-        let dist = Math.hypot(p.ax - m.x, p.ay - m.y);
-        let mspeed = m.kind === "mini_ballerina" ? 3.4 : 1.8;
-        if (dist > 10) { m.x += (p.ax - m.x)/dist*mspeed; m.y += (p.ay - m.y)/dist*mspeed; }
+    for (const m of G.miniCopies) {
+        const dist = Math.hypot(p.ax-m.x, p.ay-m.y);
+        const baseSpeed = 1.8;
+        const mspeed = m.kind === "mini_ballerina" ? baseSpeed * 1.5 : baseSpeed;
+        if (dist > 10) { m.x += (p.ax-m.x)/dist*mspeed; m.y += (p.ay-m.y)/dist*mspeed; }
+
         if (m.kind === "mini_clown") {
             m.noseCd -= dt;
             if (m.noseCd <= 0 && dist < 420) {
-                let ang = Math.atan2(p.ay - m.y, p.ax - m.x);
-                G.enemyProj.push({ x:m.x, y:m.y, vx:Math.cos(ang)*5, vy:Math.sin(ang)*5, dmg:6, life:2.5, kind:"nose", dead:false });
-                m.noseCd = 4.0;
+                const ang = Math.atan2(p.ay-m.y, p.ax-m.x);
+                G.enemyProj.push({ x: m.x, y: m.y, vx: Math.cos(ang)*5, vy: Math.sin(ang)*5, dmg: 0.5, life: 2.5, kind: "nose", dead: false });
+                m.noseCd = 5.0;
             }
+        } else if (m.kind === "mini_dancer") {
+            m.healCd -= dt;
+            if (m.healCd <= 0) {
+                m.hp = Math.min(m.maxHp, m.hp + 5);
+                for (const other of G.miniCopies) if (other !== m) other.hp = Math.min(other.maxHp, other.hp + 2);
+                if (b.alive) b.hp = Math.min(b.maxHp, b.hp + 2);
+                spawnBurst(m.x, m.y, "#3eff9e"); sfx.heal();
+                m.healCd = 60.0;
+            }
+        } else if (dist < 32 && m.cd <= 0) {
+            p.hp -= 2; sfx.robotAtk(); m.cd = 1.4; b.successFaceTimer = 1.0;
         }
-        if (m.kind === "mini_dancer") {
-            m.healCd -= dt; if (m.healCd <= 0) { if (b.alive) b.hp = Math.min(b.maxHp, b.hp + 20); spawnBurst(m.x, m.y, "#3eff9e"); m.healCd = 5.0; }
-        }
-        if (dist < 32 && m.cd <= 0) { p.hp -= 4; sfx.robotAtk(); m.cd = 1.4; b.successFaceTimer = 1.0; }
         if (m.cd > 0) m.cd -= dt;
     }
 
-    for (let v of G.vents) {
+    for (const v of G.vents) {
         if (v.active) {
             v.timer -= dt; if (v.timer <= 0) v.active = false;
-            if (Math.hypot(p.ax - v.x, p.ay - v.y) < v.r + 18) { p.hp -= 12.0 * dt; p.poisonTimer = 1.5; }
+            if (!p.dodging && Math.hypot(p.ax-v.x, p.ay-v.y) < v.r+18) { p.hp -= 12.0*dt; p.poisonTimer = 1.5; b.successFaceTimer = 1.0; }
         }
     }
 
-    if (G.screenShake > 0) G.screenShake -= dt * 4;
-    if (p.hp <= 0) { p.hp = p.maxHp * 0.5; p.ax = 0; p.ay = 220; showMessage("КРИТИЧЕСКИЙ СБОЙ. ВОССТАНОВЛЕНИЕ СИСТЕМ.", 1.5); }
-    
+    if (G.screenShake > 0) G.screenShake -= dt*4;
+    if (p.hp <= 0) { p.hp = p.maxHp*0.5; p.ax = 0; p.ay = 220; showMessage("КРИТИЧЕСКИЙ СБОЙ. ВОССТАНОВЛЕНИЕ СИСТЕМ.", 1.5); }
+
     if (b.hp <= 0 && b.alive) {
         b.alive = false; spawnBurst(b.x, b.y, "#ffcf3f", 90);
-        for(let i=0; i<3; i++) {
-            let ang = -Math.PI/2 + (i-1)*0.9;
+        for (let i = 0; i < 3; i++) {
+            const ang = -Math.PI/2 + (i-1)*0.9;
             G.portals.push({ x: Math.cos(ang)*ARENA_R*0.5, y: Math.sin(ang)*ARENA_R*0.5, id: i, spin: 0 });
         }
         sfx.portal(); showMessage("DQOPD ИЗГНАН ИЗ КИБЕР-ТЕАТРА! ВЫБЕРИТЕ ВРАТА", 4.0);
     }
 
     if (!b.alive) {
-        for(let port of G.portals) {
-            port.spin += dt * 2;
-            if (I.interact && Math.hypot(p.ax - port.x, p.ay - port.y) < 70) {
+        for (const port of G.portals) {
+            port.spin += dt*2;
+            if (I.interact && Math.hypot(p.ax-port.x, p.ay-port.y) < 70) {
                 G.state = "END"; G.endAlpha = 0;
-                let worlds = ["КОСМОСА", "ОКЕАНА", "ПУСТЫНИ"];
+                const worlds = ["КОСМОСА", "ОКЕАНА", "ПУСТЫНИ"];
                 G.endText = `ВЫ ВОШЛИ В ПОРТАЛ ${worlds[port.id]}!\nКОНЕЦ ИГРЫ. Продолжение следует...\nСпасибо за игру!`;
             }
         }
@@ -622,326 +711,443 @@ function updateArena(dt) {
 }
 
 // ----------------------------------------------------------------------
-//  РИСОВАНИЕ ГЕОМЕТРИИ / ВЕКТОРНАЯ АНИМАЦИЯ (Аналог Pygame процедур)
+//  4-DIRECTION CHARACTER RENDERING (front/back/left/right handled inline
+//  in each draw function below — mirroring for left/right is done via
+//  a signed "dir" multiplier rather than a separate helper)
 // ----------------------------------------------------------------------
-function drawShadow(x, y, w) {
-    ctx.beginPath();
-    ctx.ellipse(x, y - 6, w * 0.55, 8, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-    ctx.fill();
-}
-
 function drawPlayerGraphics(sx, sy, w, h, facing, t, muzzle, hpRatio) {
-    let bob = Math.sin(t * 8) * 2; sy += bob;
-    drawShadow(sx, sy + h * 0.5, w);
-    
-    let base = "#e8e8f0"; let legC = "#b0b0b8";
-    ctx.fillStyle = legC;
-    ctx.fillRect(sx - w*0.30, sy + h*0.14, w*0.24, h*0.34);
-    ctx.fillRect(sx + w*0.06, sy + h*0.14, w*0.24, h*0.34);
-    
-    drawVGradient(sx - w*0.5, sy - h*0.34, w, h*0.5, "#ffffff", "#b0b0b8", 8);
-    ctx.fillStyle = "#ff5a3c";
-    ctx.beginPath(); ctx.arc(sx - w*0.16, sy - h*0.06, 4, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(sx + w*0.02, sy - h*0.06, 4, 0, Math.PI*2); ctx.fill();
+    const bob = Math.sin(t*8)*2; sy += bob;
+    drawShadow(sx, sy + h*0.5, w);
 
-    let visorX = sx - w * 0.32, visorY = sy - h * 0.64, visorW = w * 0.64, visorH = h * 0.30;
-    drawVGradient(visorX, visorY, visorW, visorH, "#5a3e28", "#2e1e12", 10);
-    
-    let ex = sx + (facing > 0 ? w * 0.12 : -w * 0.12);
-    ctx.fillStyle = hpRatio > 0.3 ? "#ffffcc" : "#ff5a5a";
-    ctx.beginPath(); ctx.arc(ex, sy - h * 0.49, 6, 0, Math.PI*2); ctx.fill();
-
-    let blasterCol = muzzle ? "#ffff8c" : "#6e96e6";
-    ctx.fillStyle = blasterCol;
-    let bx = facing > 0 ? sx + w*0.46 : sx - w*0.46 - 30;
-    ctx.fillRect(bx, sy - h*0.30, 30, 14);
+    // Arkadnes — an 8-bit style arcade CABINET character: boxy cathode
+    // screen "face", chunky marquee-top head, control-panel chest.
+    function body(c, x, y, dir) {
+        // legs
+        c.fillStyle = "#7c7c86";
+        c.fillRect(x - w*0.30*1, y + h*0.14, w*0.24, h*0.34);
+        c.fillRect(x + w*0.06, y + h*0.14, w*0.24, h*0.34);
+        // cabinet torso
+        const grad = c.createLinearGradient(x-w*0.5, y-h*0.34, x+w*0.5, y+h*0.16);
+        grad.addColorStop(0, "#f4f4fa"); grad.addColorStop(1, "#b0b0c0");
+        c.fillStyle = grad;
+        c.beginPath(); c.roundRect(x-w*0.5, y-h*0.34, w, h*0.5, 8); c.fill();
+        // control panel buttons
+        c.fillStyle = "#ff5a3c"; c.beginPath(); c.arc(x-w*0.16, y-h*0.06, 4, 0, 7); c.fill();
+        c.fillStyle = "#3fcfff"; c.beginPath(); c.arc(x+w*0.02, y-h*0.06, 4, 0, 7); c.fill();
+        // marquee head w/ screen
+        const visorGrad = c.createLinearGradient(x-w*0.32, y-h*0.64, x-w*0.32, y-h*0.34);
+        visorGrad.addColorStop(0, "#5a3e28"); visorGrad.addColorStop(1, "#2e1e12");
+        c.fillStyle = visorGrad;
+        c.beginPath(); c.roundRect(x-w*0.32, y-h*0.64, w*0.64, h*0.30, 6); c.fill();
+        c.fillStyle = hpRatio > 0.3 ? "#ffffcc" : "#ff5a5a";
+        c.beginPath(); c.arc(x + dir*w*0.12, y-h*0.49, 6, 0, 7); c.fill();
+        // blaster arm
+        c.fillStyle = muzzle ? "#ffff8c" : "#6e96e6";
+        c.fillRect(x + dir*w*0.46, y-h*0.30, dir*30, 14);
+    }
+    if (facing === "left" || facing === "right") body(ctx, sx, sy, facing === "right" ? 1 : -1);
+    else if (facing === "back") {
+        ctx.fillStyle = "#7c7c86"; ctx.fillRect(sx-w*0.30, sy+h*0.14, w*0.24, h*0.34); ctx.fillRect(sx+w*0.06, sy+h*0.14, w*0.24, h*0.34);
+        drawVGradient(sx-w*0.5, sy-h*0.34, w, h*0.5, "#9a9aa8", "#70707c", 8);
+        drawVGradient(sx-w*0.32, sy-h*0.64, w*0.64, h*0.30, "#2a1c10", "#181008", 6);
+        for (let i=0;i<3;i++){ ctx.strokeStyle="#0a0a0a"; ctx.beginPath(); ctx.moveTo(sx-w*0.22, sy-h*0.58+i*7); ctx.lineTo(sx+w*0.22, sy-h*0.58+i*7); ctx.stroke(); }
+        ctx.strokeStyle = "#333"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx-w*0.05, sy-h*0.34); ctx.bezierCurveTo(sx-w*0.1,sy-h*0.1,sx+w*0.02,sy+h*0.05,sx-w*0.03,sy+h*0.2); ctx.stroke();
+    } else body(ctx, sx, sy, facing === "left" ? -1 : 1);
 }
 
-function drawRobotGraphics(sx, sy, w, h, kind, t, facing, hpRatio) {
-    let bob = Math.sin(t * 8 + sx * 0.02) * 2; sy += bob;
-    drawShadow(sx, sy + h * 0.5, w);
-    
+function drawRobotGraphics(sx, sy, w, h, r, t) {
+    const bob = Math.sin(t*8+sx*0.02)*2; sy += bob;
+    drawShadow(sx, sy+h*0.5, w);
+    const facing = r.vx < -0.05 ? "left" : r.vx > 0.05 ? "right" : "front";
+    const kind = r.kind, hpRatio = r.hp / r.maxHp;
+
+    // Shared endoskeleton: spine + square screen head + visible ball joints
+    // (per the reference sketch), with per-kind "flesh"/costume layered on top.
+    function joints(c, x, y, dir, legSpread) {
+        c.strokeStyle = "#3a3a42"; c.lineWidth = 4;
+        c.beginPath(); c.moveTo(x, y-h*0.5); c.lineTo(x, y+h*0.15); c.stroke();
+        const jt = (jx, jy) => { c.fillStyle = "#5a5a66"; c.beginPath(); c.arc(jx, jy, 5, 0, 7); c.fill(); c.strokeStyle="#20202a"; c.lineWidth=1.5; c.stroke(); };
+        jt(x, y-h*0.28); jt(x+dir*w*0.24, y-h*0.14); jt(x, y+h*0.02); jt(x-legSpread, y+h*0.32); jt(legSpread, y+h*0.32);
+    }
+
     if (kind === "ballerina") {
-        drawVGradient(sx - w*0.32, sy - h*0.48, w*0.64, h*0.34, "#e6e6ed", "#bcbcc8", 6);
-        ctx.fillStyle = "#3fc8ff";
-        ctx.beginPath(); ctx.arc(sx, sy - h * 0.31, 5, 0, Math.PI*2); ctx.fill();
+        // unique skeleton: smooth shield + round lens eye, cone tutu, needle legs
+        drawVGradient(sx-w*0.32, sy-h*0.48, w*0.64, h*0.30, "#e6e6ed", "#bcbcc8", 10);
+        ctx.fillStyle = "#3fc8ff"; ctx.beginPath(); ctx.arc(sx, sy-h*0.33, 6, 0, 7); ctx.fill();
+        ctx.fillStyle = "#e8d0e8";
+        ctx.beginPath(); ctx.moveTo(sx-w*0.3, sy-h*0.12); ctx.lineTo(sx+w*0.3, sy-h*0.12); ctx.lineTo(sx+w*0.1, sy+h*0.15); ctx.lineTo(sx-w*0.1, sy+h*0.15); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = "#c8a8c8"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(sx-w*0.06, sy+h*0.15); ctx.lineTo(sx-w*0.1, sy+h*0.46); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sx+w*0.06, sy+h*0.15); ctx.lineTo(sx+w*0.1, sy+h*0.46); ctx.stroke();
     } else if (kind === "clown") {
-        drawVGradient(sx - w*0.5, sy - h*0.32, w, h*0.46, "#00ffcd", "#00a08c", 6);
-        ctx.fillStyle = "#ff3c3c";
-        ctx.beginPath(); ctx.arc(sx, sy - h * 0.32, 7, 0, Math.PI*2); ctx.fill();
-    } else {
-        drawVGradient(sx - w*0.5, sy - h*0.32, w, h*0.46, "#aab0ba", "#6e7480", 6);
+        joints(ctx, sx, sy, facing==="left"?-1:1, w*0.22);
+        drawVGradient(sx-w*0.44, sy-h*0.32, w*0.88, h*0.42, "#00ffcd", "#00a08c", 6);
+        ctx.fillStyle = "#ff3c3c"; ctx.beginPath(); ctx.arc(sx, sy-h*0.30, 7, 0, 7); ctx.fill();
+        // slap animation: arm swing tied to stepCd phase
+        const swing = Math.sin(t*10) * (r.grounded ? 0.3 : 0.9);
+        ctx.strokeStyle = "#00c8a8"; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(sx+w*0.3, sy-h*0.2); ctx.lineTo(sx+w*0.3+swing*14, sy-h*0.05); ctx.stroke();
+    } else if (kind === "dancer") {
+        joints(ctx, sx, sy, facing==="left"?-1:1, w*0.2);
+        drawVGradient(sx-w*0.4, sy-h*0.32, w*0.8, h*0.4, "#c9a8ff", "#7858c8", 6);
+        ctx.fillStyle = "#ffe0ff"; ctx.beginPath(); ctx.arc(sx, sy-h*0.3, 6, 0, 7); ctx.fill();
+        // cane, swung rhythmically
+        const swing = Math.sin(t*6) * 0.5;
+        ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(sx+w*0.3, sy-h*0.1); ctx.lineTo(sx+w*0.3+Math.cos(swing)*22, sy+h*0.15+Math.sin(swing)*10); ctx.stroke();
+    } else if (kind === "barman") {
+        joints(ctx, sx, sy, facing==="left"?-1:1, w*0.18);
+        drawVGradient(sx-w*0.4, sy-h*0.32, w*0.8, h*0.4, "#c9b48a", "#8a7248", 6);
+        ctx.fillStyle = "#3a3a42"; ctx.fillRect(sx-w*0.32, sy-h*0.05, w*0.64, h*0.2); // apron
+        ctx.fillStyle = "#3fc8ff"; ctx.beginPath(); ctx.arc(sx, sy-h*0.3, 6, 0, 7); ctx.fill();
+    } else { // skeleton
+        joints(ctx, sx, sy, facing==="left"?-1:1, w*0.2);
+        drawVGradient(sx-w*0.4, sy-h*0.32, w*0.8, h*0.36, "#aab0ba", "#6e7480", 6);
+        ctx.fillStyle = "#c8ffcf"; ctx.beginPath(); ctx.arc(sx, sy-h*0.3, 5, 0, 7); ctx.fill();
     }
-    
+
     if (hpRatio < 1.0) {
-        let bw = w * 0.8;
-        ctx.fillStyle = "#280000"; ctx.fillRect(sx - bw/2, sy - h*0.75, bw, 5);
-        ctx.fillStyle = "#50f05a"; ctx.fillRect(sx - bw/2, sy - h*0.75, bw * Math.max(0, hpRatio), 5);
+        const bw = w*0.8;
+        ctx.fillStyle = "#280000"; ctx.fillRect(sx-bw/2, sy-h*0.75, bw, 5);
+        ctx.fillStyle = "#50f05a"; ctx.fillRect(sx-bw/2, sy-h*0.75, bw*Math.max(0,hpRatio), 5);
     }
 }
 
-function drawArcadeCabinet(sx, sy, t) {
-    ctx.fillStyle = "#232337"; ctx.fillRect(sx - 22, sy - 60, 44, 70);
-    let glow = `rgb(${Math.floor(60 + 40 * Math.sin(t*3 + sx))}, 200, 255)`;
-    ctx.fillStyle = glow; ctx.fillRect(sx - 16, sy - 52, 32, 22);
+function drawArcadeCabinet(sx, sy, t, glowSeed) {
+    // marquee-top cabinet resembling a real arcade machine
+    ctx.fillStyle = "#181822"; ctx.beginPath(); ctx.roundRect(sx-24, sy-92, 48, 92, 4); ctx.fill();
+    ctx.fillStyle = "#2a2a3a"; ctx.fillRect(sx-24, sy-92, 48, 16); // marquee
+    const glow = `rgb(${60+Math.floor(40*Math.sin(t*3+glowSeed))}, 200, 255)`;
+    ctx.fillStyle = glow; ctx.fillRect(sx-18, sy-88, 36, 10);
+    ctx.fillStyle = "#0c0c14"; ctx.fillRect(sx-18, sy-70, 36, 30); // screen
+    ctx.fillStyle = glow; ctx.globalAlpha = 0.5 + 0.3*Math.sin(t*4+glowSeed); ctx.fillRect(sx-15, sy-67, 30, 24); ctx.globalAlpha = 1;
+    ctx.fillStyle = "#333"; ctx.fillRect(sx-20, sy-34, 40, 10); // control panel
+    ctx.fillStyle = "#ff4646"; ctx.beginPath(); ctx.arc(sx-8, sy-29, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = "#46c8ff"; ctx.beginPath(); ctx.arc(sx+4, sy-29, 3, 0, 7); ctx.fill();
 }
 
 // ----------------------------------------------------------------------
-//  РЕНДЕРИНГ ЭКРАНОВ СТЕЙТ-МАШИНЫ
+//  MENU / LORE / SETTINGS SCREENS
 // ----------------------------------------------------------------------
 let menuButtons = {};
 function drawMenu() {
     ctx.clearRect(0,0,WIDTH,HEIGHT);
-    drawVGradient(0,0,WIDTH,HEIGHT, "#080812", "#121226");
-    
-    drawText("КИБЕР-ТЕАТР DQOPD", 60, "#ffcf3f", WIDTH // 2, 120, true);
-    drawText("Полная версия · HTML5 Canvas Edition", 14, "#3fcfff", WIDTH // 2, 165, true);
+    G.bgTimer -= 1/60;
+    if (G.bgTimer <= 0) { G.bgTimer = 60; G.bgMode = G.bgMode === "curtain" ? "arcade" : "curtain"; }
 
-    let labels = [["PLAY", "PATH"], ["LORE", "LORE"], ["SETTINGS", "SETTINGS"]];
-    let y0 = 260;
+    if (G.bgMode === "curtain") {
+        drawVGradient(0,0,WIDTH,HEIGHT, "#1a0810", "#2b0d18");
+        for (let i=0;i<12;i++) {
+            const cxp = i/12*WIDTH + Math.sin(G.t*1.2+i)*8;
+            ctx.fillStyle = i%2 ? "#7a0f22" : "#5c0a19";
+            ctx.beginPath(); ctx.moveTo(cxp,0); ctx.lineTo(cxp+WIDTH/12,0); ctx.lineTo(cxp+WIDTH/12-24,HEIGHT); ctx.lineTo(cxp+24,HEIGHT); ctx.closePath(); ctx.fill();
+        }
+        ctx.fillStyle = "#3a2412"; ctx.fillRect(0, HEIGHT*0.8, WIDTH, HEIGHT*0.2);
+    } else {
+        drawVGradient(0,0,WIDTH,HEIGHT, "#04060f", "#0c1a2a");
+        for (let i=0;i<9;i++) drawArcadeCabinet(60 + i*(WIDTH-120)/8, HEIGHT*0.78, G.t, i);
+        ctx.fillStyle = "#0a0d16"; ctx.fillRect(0, HEIGHT*0.86, WIDTH, HEIGHT*0.14);
+    }
+
+    drawText("КИБЕР-ТЕАТР DQOPD", 60, "#ffcf3f", WIDTH/2, 120, true);
+    drawText("Полная версия · HTML5 Canvas Edition v2", 14, "#3fcfff", WIDTH/2, 165, true);
+
+    const labels = [["PLAY","PATH"], ["LORE","LORE"], ["SETTINGS","SETTINGS"]];
+    const y0 = 260;
     labels.forEach((item, i) => {
-        let btnY = y0 + i * 70;
-        ctx.fillStyle = "#1c1c2e";
-        ctx.strokeStyle = "#ffcf3f";
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.roundRect(WIDTH // 2 - 140, btnY, 280, 52, 6); ctx.fill(); ctx.stroke();
-        drawText(item[0], 20, "#ffffff", WIDTH // 2, btnY + 32, true);
-        menuButtons[item[1]] = { x: WIDTH//2 - 140, y: btnY, w: 280, h: 52 };
+        const btnY = y0 + i*70;
+        ctx.fillStyle = "#1c1c2e"; ctx.strokeStyle = "#ffcf3f"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.roundRect(WIDTH/2-140, btnY, 280, 52, 6); ctx.fill(); ctx.stroke();
+        drawText(item[0], 20, "#ffffff", WIDTH/2, btnY+32, true);
+        menuButtons[item[1]] = { x: WIDTH/2-140, y: btnY, w: 280, h: 52 };
     });
 }
 
-// Клик по меню
-window.addEventListener('click', e => {
-    if(G.state !== "MENU") return;
-    let rect = canvas.getBoundingClientRect();
-    let mx = e.clientX - rect.left;
-    let my = e.clientY - rect.top;
-    
-    for(let target in menuButtons) {
-        let b = menuButtons[target];
-        if(mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) {
-            if(target === "PATH") { generatePath(); G.state = "PATH"; showMessage("ФАЗА 1: ПУТЬ К КИБЕР-ТЕАТРУ", 2.2); }
-            else { G.state = target; }
-            break;
+let sliderRects = {};
+let draggingSlider = null;
+function volKeyOf(name) { return { "МУЗЫКА":"music", "ЛАЗЕР ГЕРОЯ":"laser", "АТАКИ БОССА":"boss", "ШАГИ/АТАКИ КУКОЛ":"robot" }[name]; }
+
+function handleClick(mx, my) {
+    if (G.state === "MENU") {
+        for (const target in menuButtons) {
+            const b = menuButtons[target];
+            if (mx>=b.x && mx<=b.x+b.w && my>=b.y && my<=b.y+b.h) {
+                if (target === "PATH") { generatePath(); G.state = "PATH"; showMessage("ФАЗА 1: ПУТЬ К КИБЕР-ТЕАТРУ", 2.2); }
+                else G.state = target;
+                return;
+            }
+        }
+    } else if (G.state === "SETTINGS") {
+        for (const key in sliderRects) {
+            const r = sliderRects[key];
+            if (mx>=r.x-10 && mx<=r.x+r.w+10 && my>=r.y-14 && my<=r.y+14) { draggingSlider = key; VOL[key] = clamp((mx-r.x)/r.w,0,1); return; }
         }
     }
+}
+addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scale = rect.width / WIDTH;
+    handleClick((e.clientX-rect.left)/scale, (e.clientY-rect.top)/scale);
 });
+addEventListener('mousemove', e => {
+    if (!draggingSlider) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = rect.width / WIDTH;
+    const mx = (e.clientX-rect.left)/scale;
+    const r = sliderRects[draggingSlider];
+    VOL[draggingSlider] = clamp((mx-r.x)/r.w, 0, 1);
+});
+addEventListener('mouseup', () => draggingSlider = null);
 
 function drawLore() {
     ctx.fillStyle = "#0a0a12"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-    drawText("LORE", 40, "#ffcf3f", WIDTH // 2, 70, true);
-    
-    let boxY = 130;
+    drawText("LORE", 40, "#ffcf3f", WIDTH/2, 70, true);
+    const boxY = 130;
     ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.strokeStyle = "#3fcfff";
-    ctx.beginPath(); ctx.roundRect(WIDTH//2 - 340, boxY, 680, 420, 6); ctx.fill(); ctx.stroke();
-    
-    let story = "Аркаднес очнулся в комнате, наполненной другими автоматами... Он отправился в долгий путь, чтобы штурмовать Кибер-Театр. На его пути встанут куклы: Балерины, Танцоры, Клоуны и Бармены. В конце сцены его ждёт DQOPD — исполин в строгом костюме с телевизором вместо головы.";
-    drawText(story, 16, "#e6e6e6", WIDTH//2, boxY + 40, true, false);
-    drawText("ESC - назад", 14, "#ff7878", WIDTH // 2, boxY + 400, true);
+    ctx.beginPath(); ctx.roundRect(WIDTH/2-340, boxY, 680, 420, 6); ctx.fill(); ctx.stroke();
+    const story = "Аркаднес очнулся в комнате, наполненной другими автоматами... Он отправился в долгий путь по деревянной тропе, чтобы штурмовать Кибер-Театр. На его пути встанут куклы: Балерины, Танцоры, Клоуны и Бармены. В конце сцены его ждёт DQOPD — исполин в строгом костюме с телевизором вместо головы.";
+    drawText(story, 16, "#e6e6e6", WIDTH/2, boxY+40, true, false);
+    drawText("ESC - назад", 14, "#ff7878", WIDTH/2, boxY+400, true);
 }
 
 function drawSettings() {
     ctx.fillStyle = "#0a0a12"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-    drawText("SETTINGS", 40, "#ffcf3f", WIDTH // 2, 70, true);
-    drawText("Все аудиосистемы сбалансированы автоматически. ESC - назад", 16, "#96dcff", WIDTH // 2, 250, true);
+    drawText("SETTINGS", 40, "#ffcf3f", WIDTH/2, 70, true);
+    const rows = [["МУЗЫКА","music"],["ЛАЗЕР ГЕРОЯ","laser"],["АТАКИ БОССА","boss"],["ШАГИ/АТАКИ КУКОЛ","robot"]];
+    rows.forEach(([label, key], i) => {
+        const y = 180 + i*70;
+        drawText(label, 18, "#ffffff", WIDTH/2-260, y, false);
+        const track = { x: WIDTH/2-40, y, w: 300 };
+        sliderRects[key] = track;
+        ctx.fillStyle = "#3c3c50"; ctx.fillRect(track.x, y-4, track.w, 8);
+        ctx.fillStyle = "#ffcf3f"; ctx.beginPath(); ctx.arc(track.x+VOL[key]*track.w, y, 10, 0, 7); ctx.fill();
+    });
+    drawText("Стрелки/WASD — движение · ПРОБЕЛ — прыжок/уклонение · F — огонь · E — взаимодействие", 14, "#96dcff", WIDTH/2, 470, true, false);
+    drawText("ESC - назад · тяните ползунки мышью", 14, "#96dcff", WIDTH/2, 500, true, false);
 }
 
+// ----------------------------------------------------------------------
+//  PATH SCREEN RENDER — wooden plank path + corridor islands
+// ----------------------------------------------------------------------
 function drawPathScreen() {
-    ctx.fillStyle = "#080812"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-    
-    // Отрисовка пола
-    ctx.fillStyle = "#181b2e"; ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
-    
-    // Декорация аркад на старте
-    if(G.camX < 0) {
-        for(let cx = WORLD_START + 80; cx < -80; cx += 160) { drawArcadeCabinet(cx - G.camX, GROUND_Y, G.t); }
+    ctx.fillStyle = "#0c1220"; ctx.fillRect(0,0,WIDTH,HEIGHT);
+    drawVGradient(0, HEIGHT*0.35, WIDTH, HEIGHT*0.37, "rgba(90,20,40,0.0)", "rgba(60,15,30,0.25)");
+
+    // wooden plank path
+    drawVGradient(0, GROUND_Y, WIDTH, HEIGHT-GROUND_Y, "#6b4a2a", "#3a2712");
+    const plankW = 96;
+    const startPlank = Math.floor(G.camX / plankW) * plankW;
+    for (let px = startPlank; px < startPlank + WIDTH + plankW; px += plankW) {
+        const sx = px - G.camX;
+        ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(sx, GROUND_Y); ctx.lineTo(sx, HEIGHT); ctx.stroke();
+        ctx.strokeStyle = "rgba(255,220,180,0.06)"; ctx.lineWidth = 1;
+        for (let k=1;k<4;k++) { ctx.beginPath(); ctx.moveTo(sx+8, GROUND_Y+k*14); ctx.lineTo(sx+plankW-8, GROUND_Y+k*14+3); ctx.stroke(); }
     }
 
-    // Кислотные лужи
-    for(let pool of G.acidPool) {
-        ctx.beginPath(); ctx.ellipse(pool.x - G.camX, GROUND_Y - 4, pool.r, 8, 0, 0, Math.PI*2);
-        ctx.fillStyle = "rgba(0, 255, 68, 0.4)"; ctx.fill();
-    }
-    
-    // Вражеские пули
-    for (let pr of G.enemyProj) { ctx.fillStyle = "#00ff44"; ctx.beginPath(); ctx.arc(pr.x - G.camX, GROUND_Y + pr.y, 6, 0, Math.PI*2); ctx.fill(); }
+    if (G.camX < 0) for (let cx = WORLD_START+80; cx < -80; cx += 160) drawArcadeCabinet(cx-G.camX, GROUND_Y, G.t, cx);
 
-    // Острова
-    for(let isl of G.islands) {
-        let sx = isl.x - G.camX;
-        drawVGradient(sx - isl.rx, GROUND_Y - isl.ry, isl.rx * 2, isl.ry * 2, "#503e28", "#282014", 50);
-        
-        for (let m of isl.machines) {
-            let mx = sx + m.ox, my = GROUND_Y + m.oy;
-            ctx.fillStyle = "#121212"; ctx.fillRect(mx - 18, my - 40, 36, 54);
-            ctx.fillStyle = m.cooldown <= 0 ? m.col : "#323232"; ctx.fillRect(mx - 13, my - 33, 26, 22);
-            drawText(`${m.cost}`, 14, "#ffffff", mx, my + 22, true, false);
+    for (const pool of G.acidPool) {
+        ctx.beginPath(); ctx.ellipse(pool.x-G.camX, GROUND_Y-4, pool.r, 8, 0, 0, 7);
+        ctx.fillStyle = "rgba(0,255,68,0.4)"; ctx.fill();
+    }
+    for (const pr of G.enemyProj) { ctx.fillStyle = "#00ff44"; ctx.beginPath(); ctx.arc(pr.x-G.camX, GROUND_Y+pr.y, 6, 0, 7); ctx.fill(); }
+
+    // corridor islands: black rectangular alcove sunk into the path, grass/tree
+    // oval border, shield button centered, machines flanking left/right.
+    for (const isl of G.islands) {
+        const sx = isl.x - G.camX;
+        // grass/tree oval border
+        drawVGradient(sx-isl.rx-20, GROUND_Y-isl.ry-14, (isl.rx+20)*2, (isl.ry+14)*2+40, "#2e5a24", "#1a3814", 60);
+        for (let ti=-2; ti<=2; ti++) {
+            const tx = sx + ti*isl.rx*0.45, ty = GROUND_Y - isl.ry - 6;
+            ctx.fillStyle = "#3a2412"; ctx.fillRect(tx-4, ty-18, 8, 24);
+            ctx.fillStyle = "#2f6a2a"; ctx.beginPath(); ctx.arc(tx, ty-26, 16, 0, 7); ctx.fill();
         }
-        
+        // black corridor alcove
+        ctx.fillStyle = "#050508";
+        ctx.beginPath(); ctx.roundRect(sx-isl.rx, GROUND_Y-isl.ry, isl.rx*2, isl.ry*2, 18); ctx.fill();
+        ctx.strokeStyle = "#1a1a24"; ctx.lineWidth = 6; ctx.stroke();
+
+        // shield button, centered
+        const btnX = sx, btnY = GROUND_Y - 10;
+        ctx.fillStyle = isl.domeOn ? "#3fd0ff" : "#245560";
+        ctx.beginPath(); ctx.arc(btnX, btnY, 16, 0, 7); ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
         if (isl.domeOn) {
-            ctx.strokeStyle = `rgba(63, 207, 255, ${0.5 + 0.2*Math.sin(G.t*8)})`; ctx.lineWidth = 5;
-            ctx.beginPath(); ctx.ellipse(sx, GROUND_Y - isl.ry, isl.rx + 10, isl.ry + 20, 0, 0, Math.PI*2); ctx.stroke();
+            ctx.strokeStyle = `rgba(63,207,255,${0.5+0.3*Math.sin(G.t*8)})`; ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.ellipse(sx, GROUND_Y-isl.ry*0.4, isl.rx+6, isl.ry+16, 0, 0, 7); ctx.stroke();
+        }
+
+        for (const m of isl.machines) {
+            drawArcadeCabinet(sx+m.ox, GROUND_Y, G.t, m.ox);
+            ctx.fillStyle = m.cooldown<=0 ? m.col : "#444";
+            drawText(`${m.cost}`, 14, "#ffffff", sx+m.ox, GROUND_Y+16, true, false);
         }
     }
 
-    // Враги
-    for(let r of G.robots) {
-        drawRobotGraphics(r.x - G.camX, GROUND_Y + r.y, r.w, r.h, r.kind, G.t, r.vx >= 0 ? 1 : -1, r.hp / r.maxHp);
-    }
+    for (const r of G.robots) drawRobotGraphics(r.x-G.camX, GROUND_Y+r.y, r.w, r.h, r, G.t);
 
-    // Игрок
-    let p = G.player;
-    drawPlayerGraphics(p.x - G.camX, GROUND_Y + p.y + p.hopY, p.w, p.h, I.facing, G.t, p.fireCd > 0.12, p.hp / p.maxHp);
+    const p = G.player;
+    drawPlayerGraphics(p.x-G.camX, GROUND_Y+p.y+p.hopY, p.w, p.h, I.facing, G.t, p.fireCd>0.12, p.hp/p.maxHp);
 
-    // Снаряды игрока
     ctx.fillStyle = "#ff4646";
-    for(let l of G.lasers) { ctx.fillRect(l.x - G.camX - 8, GROUND_Y + l.y - 16, 16, 5); }
+    for (const l of G.lasers) ctx.fillRect(l.x-G.camX-8, GROUND_Y+l.y-16, 16, 5);
 
-    // Прогресс
-    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(WIDTH//2 - 130, 10, 260, 10);
-    let prog = clamp((p.x - WORLD_START) / (WORLD_LENGTH - WORLD_START), 0, 1);
-    ctx.fillStyle = "#78ff3f"; ctx.fillRect(WIDTH//2 - 128, 12, 256 * prog, 6);
+    for (const pt of G.particles) { ctx.fillStyle = pt.color; ctx.fillRect(pt.x-G.camX, GROUND_Y+pt.y, 4, 4); }
+
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(WIDTH/2-130, 10, 260, 10);
+    const prog = clamp((p.x-WORLD_START)/(WORLD_LENGTH-WORLD_START), 0, 1);
+    ctx.fillStyle = "#78ff3f"; ctx.fillRect(WIDTH/2-128, 12, 256*prog, 6);
 }
 
+// ----------------------------------------------------------------------
+//  ARENA SCREEN RENDER — big wooden theater floor, detailed boss
+// ----------------------------------------------------------------------
 function drawArenaScreen() {
-    let p = G.player; let b = G.boss;
-    let shakeX = (Math.random() * G.screenShake * 5);
-    let shakeY = (Math.random() * G.screenShake * 5);
-    let offX = WIDTH / 2 + shakeX - p.ax;
-    let offY = HEIGHT / 2 + shakeY - p.ay;
+    const p = G.player, b = G.boss;
+    const shakeX = Math.random()*G.screenShake*5, shakeY = Math.random()*G.screenShake*5;
+    const offX = WIDTH/2+shakeX-p.ax, offY = HEIGHT/2+shakeY-p.ay;
 
     ctx.fillStyle = "#0c0612"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-    
-    // Сама арена
-    ctx.fillStyle = "#231230"; ctx.beginPath(); ctx.arc(offX, offY, ARENA_R, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = "#ffcf3f"; ctx.lineWidth = 6; ctx.stroke();
 
-    // Клапаны вентиляции
-    for(let v of G.vents) {
+    // wooden theater floor
+    ctx.save();
+    ctx.beginPath(); ctx.arc(offX, offY, ARENA_R, 0, 7); ctx.clip();
+    drawVGradient(offX-ARENA_R, offY-ARENA_R, ARENA_R*2, ARENA_R*2, "#7a5a34", "#4a3418");
+    for (let ring = ARENA_R; ring > 0; ring -= 46) {
+        ctx.strokeStyle = "rgba(0,0,0,0.12)"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(offX, offY, ring, 0, 7); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.strokeStyle = "#ffcf3f"; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(offX, offY, ARENA_R, 0, 7); ctx.stroke();
+
+    for (const v of G.vents) {
         ctx.fillStyle = v.active ? "#ff143c" : "#3c3c3c";
-        ctx.beginPath(); ctx.arc(v.x + offX, v.y + offY, v.r, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(v.x+offX, v.y+offY, v.r, 0, 7); ctx.fill();
     }
+    for (const obs of G.obstacles) drawVGradient(obs.x+offX-obs.w/2, obs.y+offY-obs.h/2, obs.w, obs.h, "#6e5438", "#46321e");
 
-    // Препятствия
-    for(let obs of G.obstacles) {
-        drawVGradient(obs.x + offX - obs.w/2, obs.y + offY - obs.h/2, obs.w, obs.h, "#6e5438", "#46321e");
-    }
-
-    // Босс
-    if (b && b.alive) {
-        let sx = b.x + offX, sy = b.y + offY;
-        ctx.fillStyle = "#3c424e"; ctx.fillRect(sx - 40, sy - 46, 80, 74); // Тело
-        ctx.fillStyle = "#1a1a20"; ctx.fillRect(sx - 48, sy - 128, 96, 66); // Голова-ТВ
-        
-        if (b.stunTimer > 0) {
-            ctx.fillStyle = G.t % 0.2 > 0.1 ? "#ff3232" : "#32ff32"; ctx.fillRect(sx - 42, sy - 122, 84, 52);
-        } else {
-            ctx.fillStyle = "#08080c"; ctx.fillRect(sx - 42, sy - 122, 84, 52);
-            drawText(b.successFaceTimer > 0 ? "O_O" : "◡", 20, "#1cff6a", sx, sy - 96, true);
+    if (G.arenaDarkness > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${0.6*G.arenaDarkness})`;
+        ctx.save(); ctx.beginPath(); ctx.arc(offX, offY, ARENA_R, 0, 7); ctx.clip(); ctx.fillRect(0,0,WIDTH,HEIGHT); ctx.restore();
+        for (let i=0;i<10;i++) {
+            const ang = i/10*Math.PI*2;
+            const cxp = offX+Math.cos(ang)*ARENA_R*0.9, cyp = offY+Math.sin(ang)*ARENA_R*0.9;
+            ctx.fillStyle = "#ffcf3f"; ctx.globalAlpha = 0.7+0.3*Math.sin(G.t*3+i); ctx.beginPath(); ctx.arc(cxp,cyp,3,0,7); ctx.fill(); ctx.globalAlpha=1;
         }
     }
 
-    // Порталы в конце
-    for(let port of G.portals) {
-        let px = port.x + offX, py = port.y + offY;
-        ctx.fillStyle = ["#3fcfff", "#3fff9e", "#ffcf3f"][port.id];
-        ctx.beginPath(); ctx.arc(px, py, 40, 0, Math.PI*2); ctx.fill();
-        drawText(["КОСМОС", "ОКЕАН", "ПУСТЫНЯ"][port.id], 14, "#ffffff", px, py + 55, true);
+    if (b && b.currentAttack === "seismic" && b.seismicTelegraph > 0) {
+        ctx.strokeStyle = `rgba(255,80,80,${b.seismicTelegraph/1.2})`; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.arc(offX, offY, ARENA_R*0.4, 0, 7); ctx.stroke();
     }
 
-    // Игрок и лазеры
-    drawPlayerGraphics(p.ax + offX, p.ay + offY, p.w, p.h, I.facing, G.t, p.fireCd > 0.12, p.hp / p.maxHp);
-    ctx.fillStyle = "#ff4646";
-    for(let l of G.lasers) { ctx.fillRect(l.x + offX - 6, l.y + offY - 3, 12, 5); }
-    
-    // Вражеские снаряды на арене
-    for(let pr of G.enemyProj) {
-        ctx.fillStyle = pr.kind === "nose" ? "#ff3c3c" : "#ffffff";
-        ctx.beginPath(); ctx.arc(pr.x + offX, pr.y + offY, 6, 0, Math.PI*2); ctx.fill();
+    // Boss: suit per spec — black pants, blue-grey pinstripe shirt, grey vest
+    if (b && b.alive) {
+        const sx = b.x+offX, sy = b.y+offY+b.hopY;
+        ctx.fillStyle = "#0a0a0a"; ctx.fillRect(sx-32, sy-6, 22, 56); ctx.fillRect(sx+10, sy-6, 22, 56); // black pants
+        const shirtGrad = ctx.createLinearGradient(sx-42, sy-46, sx+42, sy+16);
+        shirtGrad.addColorStop(0, "#5c6a80"); shirtGrad.addColorStop(1, "#3a4658");
+        ctx.fillStyle = shirtGrad; ctx.fillRect(sx-42, sy-46, 84, 62);
+        ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1.5;
+        for (let lx=-32; lx<40; lx+=9) { ctx.beginPath(); ctx.moveTo(sx+lx, sy-44); ctx.lineTo(sx+lx, sy+14); ctx.stroke(); }
+        ctx.fillStyle = "#6e7480"; ctx.beginPath(); // grey vest
+        ctx.moveTo(sx-26, sy-44); ctx.lineTo(sx+26, sy-44); ctx.lineTo(sx+18, sy+10); ctx.lineTo(sx-18, sy+10); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = "#1a1a20"; ctx.fillRect(sx-48, sy-128, 96, 66); // TV head
+        if (b.stunTimer > 0) {
+            ctx.fillStyle = G.t % 0.2 > 0.1 ? "#ff3232" : "#32ff32"; ctx.fillRect(sx-42, sy-122, 84, 52);
+            for (let gy=-118; gy<-74; gy+=6) { ctx.strokeStyle = `hsl(${(G.t*400+gy)%360},80%,60%)`; ctx.beginPath(); ctx.moveTo(sx-40, sy+gy+120); ctx.lineTo(sx+40, sy+gy+120); ctx.stroke(); }
+        } else {
+            ctx.fillStyle = "#08080c"; ctx.fillRect(sx-42, sy-122, 84, 52);
+            const smiling = b.successFaceTimer > 0;
+            drawText(smiling ? "◡" : "•_•", smiling?22:18, smiling ? "#1cff6a" : "#3fcfff", sx, sy-96, true);
+        }
     }
+
+    for (const port of G.portals) {
+        const px = port.x+offX, py = port.y+offY;
+        ctx.fillStyle = ["#3fcfff","#3fff9e","#ffcf3f"][port.id];
+        ctx.beginPath(); ctx.arc(px,py,40,0,7); ctx.fill();
+        drawText(["КОСМОС","ОКЕАН","ПУСТЫНЯ"][port.id], 14, "#ffffff", px, py+55, true);
+    }
+
+    for (const m of G.miniCopies) {
+        const mk = m.kind.replace("mini_","");
+        drawRobotGraphics(m.x+offX, m.y+offY, 26, 34, { kind: mk, vx: 0.1, hp: m.hp, maxHp: m.maxHp, grounded: true }, G.t);
+    }
+
+    drawPlayerGraphics(p.ax+offX, p.ay+offY, p.w, p.h, I.facing, G.t, p.fireCd>0.12, p.hp/p.maxHp);
+    ctx.fillStyle = "#ff4646";
+    for (const l of G.lasers) ctx.fillRect(l.x+offX-6, l.y+offY-3, 12, 5);
+    for (const pr of G.enemyProj) { ctx.fillStyle = pr.kind==="nose" ? "#ff3c3c" : "#ffffff"; ctx.beginPath(); ctx.arc(pr.x+offX, pr.y+offY, 6, 0, 7); ctx.fill(); }
+    for (const pt of G.particles) { ctx.fillStyle = pt.color; ctx.fillRect(pt.x+offX, pt.y+offY, 4, 4); }
 }
 
+// ----------------------------------------------------------------------
+//  HUD / CARD POPUP / END
+// ----------------------------------------------------------------------
 function drawHUD() {
-    let p = G.player;
-    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(12, 12, 220, 46);
-    ctx.strokeStyle = "#ffcf3f"; ctx.strokeRect(12, 12, 220, 46);
+    const p = G.player;
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(12,12,220,46);
+    ctx.strokeStyle = "#ffcf3f"; ctx.strokeRect(12,12,220,46);
     drawText("ARKADNES", 14, "#ffffff", 20, 28);
-    ctx.fillStyle = "#280000"; ctx.fillRect(20, 36, 160, 14);
-    ctx.fillStyle = "#3cdc5a"; ctx.fillRect(20, 36, 160 * Math.max(0, p.hp/p.maxHp), 14);
+    ctx.fillStyle = "#280000"; ctx.fillRect(20,36,160,14);
+    ctx.fillStyle = "#3cdc5a"; ctx.fillRect(20,36,160*Math.max(0,p.hp/p.maxHp),14);
 
-    // ОМП
-    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(WIDTH - 180, 12, 168, 40);
-    drawText(`ОМП: ${p.omp}`, 14, "#ffffff", WIDTH - 100, 36, true);
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(WIDTH-180,12,168,40);
+    drawText(`ОМП: ${p.omp}`, 14, "#ffffff", WIDTH-100, 36, true);
 
     if (G.state === "ARENA" && G.boss) {
-        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(WIDTH//2 - 220, 12, 440, 40);
-        drawText("DQOPD — ГЛАВА КИБЕР-ТЕАТРА", 14, "#ffffff", WIDTH//2, 28, true);
-        ctx.fillStyle = "#3c0000"; ctx.fillRect(WIDTH//2 - 200, 36, 400, 10);
-        ctx.fillStyle = "#ff3c3c"; ctx.fillRect(WIDTH//2 - 200, 36, 400 * Math.max(0, G.boss.hp / G.boss.maxHp), 10);
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(WIDTH/2-220,12,440,40);
+        drawText("DQOPD — ГЛАВА КИБЕР-ТЕАТРА", 14, "#ffffff", WIDTH/2, 28, true);
+        ctx.fillStyle = "#3c0000"; ctx.fillRect(WIDTH/2-200,36,400,10);
+        ctx.fillStyle = "#ff3c3c"; ctx.fillRect(WIDTH/2-200,36,400*Math.max(0,G.boss.hp/G.boss.maxHp),10);
     }
-
-    if (G.messageTimer > 0) { drawText(G.message, 20, "#ffcf3f", WIDTH // 2, 150, true); }
+    if (G.messageTimer > 0) drawText(G.message, 20, "#ffcf3f", WIDTH/2, 150, true);
 }
 
 function drawCardPopupOverlay() {
-    let pop = G.cardPopup; if (!pop) return;
+    const pop = G.cardPopup; if (!pop) return;
     ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-    let cw = 260, ch = 340;
-    let cx = WIDTH//2 - cw//2, cy = HEIGHT//2 - ch//2;
-    
-    ctx.fillStyle = "#12121a"; ctx.fillRect(cx, cy, cw, ch);
-    ctx.strokeStyle = pop.machine.col; ctx.strokeRect(cx, cy, cw, ch);
-    
-    drawText(pop.machine.tier.toUpperCase(), 20, pop.machine.col, WIDTH//2, cy + 30, true);
-    if(pop.stage === "spin") { drawText("...", 40, "#ffffff", WIDTH//2, HEIGHT//2, true); }
-    else {
-        drawText(pop.success ? "УДАЧА!" : "СГОРЕЛО", 20, "#ffffff", WIDTH//2, HEIGHT//2, true);
-    }
+    const cw=260, ch=340, cx=WIDTH/2-cw/2, cy=HEIGHT/2-ch/2;
+    ctx.fillStyle = "#12121a"; ctx.fillRect(cx,cy,cw,ch);
+    ctx.strokeStyle = pop.machine.col; ctx.strokeRect(cx,cy,cw,ch);
+    drawText(pop.machine.tier.toUpperCase(), 20, pop.machine.col, WIDTH/2, cy+30, true);
+    if (pop.stage === "spin") drawText("...", 40, "#ffffff", WIDTH/2, HEIGHT/2, true);
+    else drawText(pop.success ? "УДАЧА!" : "СГОРЕЛО", 20, "#ffffff", WIDTH/2, HEIGHT/2, true);
 }
 
 function drawEnd() {
     ctx.fillStyle = "#000000"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-    let lines = G.endText.split('\n');
-    lines.forEach((ln, i) => { drawText(ln, 20, "#ffcf3f", WIDTH//2, HEIGHT//2 - 40 + i*34, true); });
+    const lines = G.endText.split('\n');
+    lines.forEach((ln,i) => drawText(ln, 20, "#ffcf3f", WIDTH/2, HEIGHT/2-40+i*34, true));
 }
 
 // ----------------------------------------------------------------------
-//  ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ (Аналог main + clock.tick)
+//  MAIN LOOP
 // ----------------------------------------------------------------------
 let lastTime = performance.now();
 function gameLoop(now) {
-    let dt = (now - lastTime) / 1000.0;
-    lastTime = now;
+    let dt = (now - lastTime) / 1000.0; lastTime = now;
     if (dt > 0.05) dt = 0.05;
-
     G.t += dt;
     if (G.messageTimer > 0) G.messageTimer -= dt;
 
     pollInput();
+    updateMusic(dt);
 
-    if (G.state === "MENU") { drawMenu(); }
-    else if (G.state === "LORE") { drawLore(); }
-    else if (G.state === "SETTINGS") { drawSettings(); }
-    else if (G.state === "PATH") {
-        updateMusic(dt);
-        updatePath(dt);
-        drawPathScreen();
-        drawHUD();
-        drawCardPopupOverlay();
-    } else if (G.state === "ARENA") {
-        updateMusic(dt);
-        updateArena(dt);
-        drawArenaScreen();
-        drawHUD();
-    } else if (G.state === "END") {
-        drawEnd();
-    }
+    if (G.state === "MENU") drawMenu();
+    else if (G.state === "LORE") drawLore();
+    else if (G.state === "SETTINGS") drawSettings();
+    else if (G.state === "PATH") { updatePath(dt); drawPathScreen(); drawHUD(); drawCardPopupOverlay(); }
+    else if (G.state === "ARENA") { updateArena(dt); drawArenaScreen(); drawHUD(); }
+    else if (G.state === "END") drawEnd();
 
     requestAnimationFrame(gameLoop);
 }
-
-// Запуск цикла
 requestAnimationFrame(gameLoop);
 </script>
 </body>
