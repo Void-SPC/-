@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>КИБЕР-ТЕАТР DQOPD — HTML5 Edition v2</title>
+    <title>КИБЕР-ТЕАТР DQOPD — HTML5 Edition v2 (Fixed)</title>
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
         html, body {
@@ -61,17 +61,21 @@
 
 <script>
 "use strict";
-/* ============================================================
-   КИБЕР-ТЕАТР DQOPD — HTML5 Canvas Edition v2
-   Все звуки процедурные (Web Audio, без файлов). Графика —
-   векторные примитивы canvas ("воксель-пиксель" стиль); это
-   плейсхолдер под реальный спрайт-лист/пиксель-арт, который
-   этот инструмент не умеет генерировать как изображение.
-   ============================================================ */
 
-// ----------------------------------------------------------------------
-//  RESPONSIVE STAGE SCALING (letterboxed, keeps 1280x720 logical res)
-// ----------------------------------------------------------------------
+// Понивелла для старых браузеров (поддержка roundRect)
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        return this;
+    };
+}
+
 const stage = document.getElementById('stage');
 function fitStage(){
     const scale = Math.min(innerWidth / 1280, innerHeight / 720);
@@ -80,9 +84,6 @@ function fitStage(){
 addEventListener('resize', fitStage);
 fitStage();
 
-// ----------------------------------------------------------------------
-//  AUDIO
-// ----------------------------------------------------------------------
 let audioCtx = null;
 const startOverlay = document.getElementById('click-to-start');
 startOverlay.addEventListener('click', () => {
@@ -122,7 +123,6 @@ const sfx = {
     heal: () => playTone(440, 0.2, 0.2 * VOL.robot, 'sine', 660),
 };
 
-// Distinct note palettes / tempo per area, selected in updateMusic()
 const MUSIC_PALETTES = {
     arcadeIntro: { notes: [196, 220, 246, 262, 294], tempo: 0.30, wave: 'triangle', vol: 0.05 },
     path:        { notes: [261, 293, 329, 392, 440, 523], tempo: 0.20, wave: 'square', vol: 0.05 },
@@ -132,7 +132,7 @@ const MUSIC_PALETTES = {
 let musicTimer = 0;
 
 function currentMusicKey(){
-    if (G.state === 'MENU') return G.bgMode === 'arcade' ? 'arcadeIntro' : 'arcadeIntro';
+    if (G.state === 'MENU') return 'arcadeIntro';
     if (G.state === 'ARENA') return 'boss';
     if (G.state === 'PATH') {
         const onIsl = G.islands.find(isl => Math.abs(G.player.x - isl.x) < isl.rx && Math.abs(G.player.y - isl.y) < isl.ry);
@@ -153,9 +153,6 @@ function updateMusic(dt) {
     }
 }
 
-// ----------------------------------------------------------------------
-//  CONSTANTS
-// ----------------------------------------------------------------------
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const WIDTH = 1280, HEIGHT = 720;
@@ -165,7 +162,6 @@ const ARENA_SCALE = 5.0;
 const ARENA_R = Math.min(WIDTH, HEIGHT) * 0.30 * ARENA_SCALE;
 const WORLD_START = -720, BATTLE_START = 0, WORLD_LENGTH = 9000;
 
-// Exact per-kind stats from the design spec.
 const KIND_DEF = {
     skeleton:  { hp: 35, speed: 1.3, meleeRange: 36, hitDmg: 8.0,  hitCd: 1.6, dps: 0,   auraSpeed: 1, auraDmg: 1 },
     barman:    { hp: 10, speed: 1.0, meleeRange: 0,  hitDmg: 0,    hitCd: 0,   dps: 0,   ranged: true },
@@ -195,9 +191,6 @@ let G = {
     boss: null,
 };
 
-// ----------------------------------------------------------------------
-//  INPUT (keyboard + mouse + touch joystick, 4-way facing)
-// ----------------------------------------------------------------------
 let keys = {};
 let mousePressed = false;
 let I = { x: 0, y: 0, fire: false, interact: false, jumpPressed: false, facing: "right", aimDir: 1 };
@@ -223,7 +216,6 @@ function pollInput() {
     if (touchAxis.active) { ax = touchAxis.x; ay = touchAxis.y; }
     I.x = ax; I.y = ay;
     I.fire = keys['KeyF'] || mousePressed || touchFire;
-    // 4-way facing: horizontal takes priority; aimDir persists for firing.
     if (Math.abs(ax) < 0.15 && Math.abs(ay) < 0.15) return;
     if (Math.abs(ax) >= Math.abs(ay)) {
         I.facing = ax > 0 ? "right" : "left";
@@ -233,7 +225,6 @@ function pollInput() {
     }
 }
 
-// touch joystick
 (function setupJoystick(){
     const zone = document.getElementById('joyZone');
     const stick = document.getElementById('joyStick');
@@ -265,17 +256,8 @@ bindBtn('btnFire', () => touchFire = true, () => touchFire = false);
 bindBtn('btnInteract', () => I.interact = true);
 bindBtn('btnJump', () => I.jumpPressed = true);
 
-// ----------------------------------------------------------------------
-//  UTIL
-// ----------------------------------------------------------------------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function showMessage(txt, sec) { G.message = txt; G.messageTimer = sec; }
-function shade(hex, amt) {
-    const n = parseInt(hex.slice(1), 16);
-    let r = (n>>16)+amt, g=((n>>8)&255)+amt, b=(n&255)+amt;
-    r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
-    return `rgb(${r},${g},${b})`;
-}
 function drawText(txt, size, color, x, y, center = false, isBold = true) {
     ctx.fillStyle = "#000000";
     ctx.font = `${isBold ? 'bold ' : ''}${size}px Consolas`;
@@ -298,9 +280,6 @@ function drawShadow(x, y, w) {
     ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fill();
 }
 
-// ----------------------------------------------------------------------
-//  WORLD GENERATION
-// ----------------------------------------------------------------------
 function makeRobot(x, kind, lane) {
     const d = KIND_DEF[kind];
     return {
@@ -318,7 +297,6 @@ function generatePath() {
     let x = BATTLE_START + 500;
     while (x < WORLD_LENGTH - 400) {
         const kind = kinds[Math.floor(Math.random() * kinds.length)];
-        // second lane: ~30% of spawns walk in from a back row and converge on the hero
         const lane = Math.random() < 0.3 ? 1 : 0;
         G.robots.push(makeRobot(x, kind, lane));
         x += 240 + Math.random() * 180;
@@ -329,11 +307,11 @@ function generatePath() {
         const machines = MACHINE_TIERS.map((tier, idx) => ({
             ...tier, ox: idx === 0 ? -70 : idx === 1 ? 70 : 0, oy: 6, cooldown: 0,
         }));
-        // corridor entrance: dark rectangular alcove, grass/tree oval border, shield button centered
         G.islands.push({ x: ix, y: 0, rx: 170, ry: 95, domeOn: false, machines });
     }
 
     G.player.x = WORLD_START + 60; G.player.y = 0; G.player.omp = 0; G.player.hp = G.player.maxHp;
+    G.player.poisonTimer = 0;
 }
 
 function generateArena() {
@@ -366,9 +344,6 @@ function spawnBurst(x, y, color, n = 16) {
     }
 }
 
-// ----------------------------------------------------------------------
-//  ARCADE MACHINE ECONOMY
-// ----------------------------------------------------------------------
 function tryUseMachine(m) {
     if (G.cardPopup) return;
     if (m.cooldown > 0) { showMessage("АВТОМАТ ПЕРЕЗАРЯЖАЕТСЯ", 1.0); return; }
@@ -396,9 +371,6 @@ function resolveCardPopup(dt) {
     if (pop.stage === "result") { pop.timer -= dt; if (pop.timer <= 0) G.cardPopup = null; }
 }
 
-// ----------------------------------------------------------------------
-//  PATH UPDATE
-// ----------------------------------------------------------------------
 function isInsideIsland(isl, x, y) {
     const nx = (x - isl.x) / isl.rx, ny = (y - isl.y) / isl.ry;
     return nx*nx + ny*ny <= 1;
@@ -406,6 +378,20 @@ function isInsideIsland(isl, x, y) {
 
 function updatePath(dt) {
     const p = G.player;
+    
+    // ИСПРАВЛЕНИЕ: Безопасный сброс при смерти на этапе PATH
+    if (p.hp <= 0) { 
+        p.hp = p.maxHp; 
+        p.x = WORLD_START + 60; 
+        p.y = 0; 
+        p.poisonTimer = 0;
+        G.enemyProj = [];
+        G.acidPool = [];
+        G.lasers = [];
+        showMessage("СИСТЕМЫ ПЕРЕЗАГРУЖЕНЫ. ПОПЫТКА СНАЧАЛА.", 2.0); 
+        return; 
+    }
+
     if (G.cardPopup) resolveCardPopup(dt);
 
     const onIslandBefore = G.islands.find(isl => isInsideIsland(isl, p.x, p.y));
@@ -416,7 +402,6 @@ function updatePath(dt) {
     p.x = clamp(p.x, WORLD_START + 20, WORLD_LENGTH - 20);
     G.camX = clamp(p.x - WIDTH * 0.35, WORLD_START - 40, WORLD_LENGTH - WIDTH);
 
-    // re-check AFTER moving so leaving the corridor in any direction is never blocked
     const onIsland = G.islands.find(isl => isInsideIsland(isl, p.x, p.y));
     if (!onIsland) p.y = 0;
 
@@ -429,7 +414,6 @@ function updatePath(dt) {
     p.vy += 0.5; p.hopY += p.vy;
     if (p.hopY >= 0) { p.hopY = 0; p.vy = 0; p.onGround = true; p.jumpsLeft = 1; }
 
-    // single-tap interact: use a nearby machine, else toggle the shield on/off
     if (I.interact) {
         if (onIsland && !G.cardPopup) {
             let used = false;
@@ -472,7 +456,6 @@ function updatePath(dt) {
     for (const r of G.robots) if (r.dead) r.fade++;
     G.robots = G.robots.filter(r => !(r.dead && r.fade > 20));
 
-    if (p.hp <= 0) { p.hp = p.maxHp; p.x = WORLD_START + 60; p.y = 0; showMessage("СИСТЕМЫ ПЕРЕЗАГРУЖЕНЫ. ПОПЫТКА СНАЧАЛА.", 2.0); }
     if (p.x > WORLD_LENGTH - 120) { G.state = "ARENA"; generateArena(); showMessage("ГРАНДИОЗНЫЙ КИБЕР-АНГАР: АРЕНА DQOPD", 2.5); }
 }
 
@@ -489,13 +472,13 @@ function updatePathRobots(dt) {
         const speed = d.speed * auraSpeed;
         const dist = p.x - r.x;
 
-        if (d.ranged) { // barman: keeps range, lobs acid, backs off if too close
+        if (d.ranged) {
             if (Math.abs(dist) > 220 && Math.abs(dist) < 500) {
                 r.vx = 0; r.attackCd -= dt;
                 if (r.attackCd <= 0) { G.enemyProj.push({ x: r.x, y: -40, vx: dist*0.02, vy: -7, dmg: 0, life: 3.0, dead: false }); r.attackCd = 1.8; }
             } else if (Math.abs(dist) <= 220) r.vx = dist !== 0 ? -Math.sign(dist)*speed : speed;
             else r.vx = dist !== 0 ? Math.sign(dist)*speed : speed;
-        } else if (d.jump) { // clown: hops toward the player
+        } else if (d.jump) {
             r.jumpCd -= dt;
             if (r.grounded && r.jumpCd <= 0 && Math.abs(dist) < 400) { r.vy = -10; r.grounded = false; r.jumpCd = 1.5 + Math.random(); }
             r.vy += 0.4; r.y += r.vy;
@@ -510,7 +493,6 @@ function updatePathRobots(dt) {
         }
         r.x += r.vx;
 
-        // converge back-lane robots toward the main lane as they approach the player
         if (r.lane === 1 && Math.abs(dist) < 260) r.y += (0 - r.y) * Math.min(1, dt * 1.5);
 
         const inRange = Math.abs(dist) < d.meleeRange && Math.abs(p.y - r.y) < 40;
@@ -540,28 +522,26 @@ function updatePathRobots(dt) {
     }
 }
 
-// ----------------------------------------------------------------------
-//  ARENA UPDATE (boss abilities per spec)
-// ----------------------------------------------------------------------
 function hitBoss(dmg) {
     const b = G.boss;
     if (b.stunTimer > 0) { b.hp -= dmg; sfx.bossHit(); spawnBurst(b.x, b.y, "#ff5555"); b.successFaceTimer = 0; checkBossPhase(); return; }
     if (b.dodgeCd <= 0) {
         if (Math.random() < 0.20) {
-            b.dodgeCd = 20.0; // successful dodge: long cooldown
+            b.dodgeCd = 20.0;
             b.x += (Math.random() > 0.5 ? -110 : 110); b.y += (Math.random() > 0.5 ? -80 : 80);
             sfx.dodge(); showMessage("DQOPD УКЛОНИЛСЯ!", 0.8);
             return;
         }
-        b.dodgeCd = 10.0; // failed attempt: shorter cooldown before it can try again
+        b.dodgeCd = 10.0;
     }
     b.hp -= dmg; sfx.bossHit(); spawnBurst(b.x, b.y, "#ff5555"); checkBossPhase();
 }
 
+// Изменен лимит фаз босса (защита от вылета индекса)
 function checkBossPhase() {
     const b = G.boss; const pct = b.hp / b.maxHp;
     const target = pct > 0.75 ? 0 : pct > 0.5 ? 1 : pct > 0.25 ? 2 : pct > 0 ? 3 : 4;
-    if (target > b.phaseIdx) { b.phaseIdx = target; b.stunTimer = 3.0; b.currentAttack = null; sfx.stun(); showMessage("DQOPD ОГЛУШЁН ГЛИТЧЕМ ТВ-ЭКРАНА!", 1.6); }
+    if (target > b.phaseIdx && target <= 3) { b.phaseIdx = target; b.stunTimer = 3.0; b.currentAttack = null; sfx.stun(); showMessage("DQOPD ОГЛУШЁН ГЛИТЧЕМ ТВ-ЭКРАНА!", 1.6); }
 }
 
 function startBossAttack() {
@@ -633,7 +613,6 @@ function updateArena(dt) {
         if (bd > 20) { b.x += (b.targetX-b.x)/bd*3.0; b.y += (b.targetY-b.y)/bd*3.0; }
 
         if (b.currentAttack === "seismic" && b.seismicTelegraph > 0) {
-            // jump-then-slam: rises during the telegraph, slams down at impact
             const progress = 1 - (b.seismicTelegraph / 1.2);
             b.hopY = -Math.sin(progress * Math.PI) * 46;
             b.seismicTelegraph -= dt;
@@ -646,7 +625,6 @@ function updateArena(dt) {
             }
         } else { b.hopY *= 0.8; }
         if (G.arenaDarkness > 0 && b.currentAttack !== "darkness") G.arenaDarkness -= dt * 0.25;
-        // darkness lets DQOPD dodge more often — he's hiding among the candles
         b.dodgeBonus = (b.currentAttack === "darkness" || G.arenaDarkness > 0.3) ? 0.15 : 0;
     }
 
@@ -710,38 +688,26 @@ function updateArena(dt) {
     }
 }
 
-// ----------------------------------------------------------------------
-//  4-DIRECTION CHARACTER RENDERING (front/back/left/right handled inline
-//  in each draw function below — mirroring for left/right is done via
-//  a signed "dir" multiplier rather than a separate helper)
-// ----------------------------------------------------------------------
 function drawPlayerGraphics(sx, sy, w, h, facing, t, muzzle, hpRatio) {
     const bob = Math.sin(t*8)*2; sy += bob;
     drawShadow(sx, sy + h*0.5, w);
 
-    // Arkadnes — an 8-bit style arcade CABINET character: boxy cathode
-    // screen "face", chunky marquee-top head, control-panel chest.
     function body(c, x, y, dir) {
-        // legs
         c.fillStyle = "#7c7c86";
         c.fillRect(x - w*0.30*1, y + h*0.14, w*0.24, h*0.34);
         c.fillRect(x + w*0.06, y + h*0.14, w*0.24, h*0.34);
-        // cabinet torso
         const grad = c.createLinearGradient(x-w*0.5, y-h*0.34, x+w*0.5, y+h*0.16);
         grad.addColorStop(0, "#f4f4fa"); grad.addColorStop(1, "#b0b0c0");
         c.fillStyle = grad;
         c.beginPath(); c.roundRect(x-w*0.5, y-h*0.34, w, h*0.5, 8); c.fill();
-        // control panel buttons
         c.fillStyle = "#ff5a3c"; c.beginPath(); c.arc(x-w*0.16, y-h*0.06, 4, 0, 7); c.fill();
         c.fillStyle = "#3fcfff"; c.beginPath(); c.arc(x+w*0.02, y-h*0.06, 4, 0, 7); c.fill();
-        // marquee head w/ screen
         const visorGrad = c.createLinearGradient(x-w*0.32, y-h*0.64, x-w*0.32, y-h*0.34);
         visorGrad.addColorStop(0, "#5a3e28"); visorGrad.addColorStop(1, "#2e1e12");
         c.fillStyle = visorGrad;
         c.beginPath(); c.roundRect(x-w*0.32, y-h*0.64, w*0.64, h*0.30, 6); c.fill();
         c.fillStyle = hpRatio > 0.3 ? "#ffffcc" : "#ff5a5a";
         c.beginPath(); c.arc(x + dir*w*0.12, y-h*0.49, 6, 0, 7); c.fill();
-        // blaster arm
         c.fillStyle = muzzle ? "#ffff8c" : "#6e96e6";
         c.fillRect(x + dir*w*0.46, y-h*0.30, dir*30, 14);
     }
@@ -761,8 +727,6 @@ function drawRobotGraphics(sx, sy, w, h, r, t) {
     const facing = r.vx < -0.05 ? "left" : r.vx > 0.05 ? "right" : "front";
     const kind = r.kind, hpRatio = r.hp / r.maxHp;
 
-    // Shared endoskeleton: spine + square screen head + visible ball joints
-    // (per the reference sketch), with per-kind "flesh"/costume layered on top.
     function joints(c, x, y, dir, legSpread) {
         c.strokeStyle = "#3a3a42"; c.lineWidth = 4;
         c.beginPath(); c.moveTo(x, y-h*0.5); c.lineTo(x, y+h*0.15); c.stroke();
@@ -771,7 +735,6 @@ function drawRobotGraphics(sx, sy, w, h, r, t) {
     }
 
     if (kind === "ballerina") {
-        // unique skeleton: smooth shield + round lens eye, cone tutu, needle legs
         drawVGradient(sx-w*0.32, sy-h*0.48, w*0.64, h*0.30, "#e6e6ed", "#bcbcc8", 10);
         ctx.fillStyle = "#3fc8ff"; ctx.beginPath(); ctx.arc(sx, sy-h*0.33, 6, 0, 7); ctx.fill();
         ctx.fillStyle = "#e8d0e8";
@@ -783,7 +746,6 @@ function drawRobotGraphics(sx, sy, w, h, r, t) {
         joints(ctx, sx, sy, facing==="left"?-1:1, w*0.22);
         drawVGradient(sx-w*0.44, sy-h*0.32, w*0.88, h*0.42, "#00ffcd", "#00a08c", 6);
         ctx.fillStyle = "#ff3c3c"; ctx.beginPath(); ctx.arc(sx, sy-h*0.30, 7, 0, 7); ctx.fill();
-        // slap animation: arm swing tied to stepCd phase
         const swing = Math.sin(t*10) * (r.grounded ? 0.3 : 0.9);
         ctx.strokeStyle = "#00c8a8"; ctx.lineWidth = 6;
         ctx.beginPath(); ctx.moveTo(sx+w*0.3, sy-h*0.2); ctx.lineTo(sx+w*0.3+swing*14, sy-h*0.05); ctx.stroke();
@@ -791,16 +753,15 @@ function drawRobotGraphics(sx, sy, w, h, r, t) {
         joints(ctx, sx, sy, facing==="left"?-1:1, w*0.2);
         drawVGradient(sx-w*0.4, sy-h*0.32, w*0.8, h*0.4, "#c9a8ff", "#7858c8", 6);
         ctx.fillStyle = "#ffe0ff"; ctx.beginPath(); ctx.arc(sx, sy-h*0.3, 6, 0, 7); ctx.fill();
-        // cane, swung rhythmically
         const swing = Math.sin(t*6) * 0.5;
         ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(sx+w*0.3, sy-h*0.1); ctx.lineTo(sx+w*0.3+Math.cos(swing)*22, sy+h*0.15+Math.sin(swing)*10); ctx.stroke();
     } else if (kind === "barman") {
         joints(ctx, sx, sy, facing==="left"?-1:1, w*0.18);
         drawVGradient(sx-w*0.4, sy-h*0.32, w*0.8, h*0.4, "#c9b48a", "#8a7248", 6);
-        ctx.fillStyle = "#3a3a42"; ctx.fillRect(sx-w*0.32, sy-h*0.05, w*0.64, h*0.2); // apron
+        ctx.fillStyle = "#3a3a42"; ctx.fillRect(sx-w*0.32, sy-h*0.05, w*0.64, h*0.2);
         ctx.fillStyle = "#3fc8ff"; ctx.beginPath(); ctx.arc(sx, sy-h*0.3, 6, 0, 7); ctx.fill();
-    } else { // skeleton
+    } else {
         joints(ctx, sx, sy, facing==="left"?-1:1, w*0.2);
         drawVGradient(sx-w*0.4, sy-h*0.32, w*0.8, h*0.36, "#aab0ba", "#6e7480", 6);
         ctx.fillStyle = "#c8ffcf"; ctx.beginPath(); ctx.arc(sx, sy-h*0.3, 5, 0, 7); ctx.fill();
@@ -814,21 +775,17 @@ function drawRobotGraphics(sx, sy, w, h, r, t) {
 }
 
 function drawArcadeCabinet(sx, sy, t, glowSeed) {
-    // marquee-top cabinet resembling a real arcade machine
     ctx.fillStyle = "#181822"; ctx.beginPath(); ctx.roundRect(sx-24, sy-92, 48, 92, 4); ctx.fill();
-    ctx.fillStyle = "#2a2a3a"; ctx.fillRect(sx-24, sy-92, 48, 16); // marquee
+    ctx.fillStyle = "#2a2a3a"; ctx.fillRect(sx-24, sy-92, 48, 16);
     const glow = `rgb(${60+Math.floor(40*Math.sin(t*3+glowSeed))}, 200, 255)`;
     ctx.fillStyle = glow; ctx.fillRect(sx-18, sy-88, 36, 10);
-    ctx.fillStyle = "#0c0c14"; ctx.fillRect(sx-18, sy-70, 36, 30); // screen
+    ctx.fillStyle = "#0c0c14"; ctx.fillRect(sx-18, sy-70, 36, 30);
     ctx.fillStyle = glow; ctx.globalAlpha = 0.5 + 0.3*Math.sin(t*4+glowSeed); ctx.fillRect(sx-15, sy-67, 30, 24); ctx.globalAlpha = 1;
-    ctx.fillStyle = "#333"; ctx.fillRect(sx-20, sy-34, 40, 10); // control panel
+    ctx.fillStyle = "#333"; ctx.fillRect(sx-20, sy-34, 40, 10);
     ctx.fillStyle = "#ff4646"; ctx.beginPath(); ctx.arc(sx-8, sy-29, 3, 0, 7); ctx.fill();
     ctx.fillStyle = "#46c8ff"; ctx.beginPath(); ctx.arc(sx+4, sy-29, 3, 0, 7); ctx.fill();
 }
 
-// ----------------------------------------------------------------------
-//  MENU / LORE / SETTINGS SCREENS
-// ----------------------------------------------------------------------
 let menuButtons = {};
 function drawMenu() {
     ctx.clearRect(0,0,WIDTH,HEIGHT);
@@ -837,7 +794,7 @@ function drawMenu() {
 
     if (G.bgMode === "curtain") {
         drawVGradient(0,0,WIDTH,HEIGHT, "#1a0810", "#2b0d18");
-        for (let i=0;i<12;i++) {
+        for (let i=0; i<12; i++) {
             const cxp = i/12*WIDTH + Math.sin(G.t*1.2+i)*8;
             ctx.fillStyle = i%2 ? "#7a0f22" : "#5c0a19";
             ctx.beginPath(); ctx.moveTo(cxp,0); ctx.lineTo(cxp+WIDTH/12,0); ctx.lineTo(cxp+WIDTH/12-24,HEIGHT); ctx.lineTo(cxp+24,HEIGHT); ctx.closePath(); ctx.fill();
@@ -845,7 +802,7 @@ function drawMenu() {
         ctx.fillStyle = "#3a2412"; ctx.fillRect(0, HEIGHT*0.8, WIDTH, HEIGHT*0.2);
     } else {
         drawVGradient(0,0,WIDTH,HEIGHT, "#04060f", "#0c1a2a");
-        for (let i=0;i<9;i++) drawArcadeCabinet(60 + i*(WIDTH-120)/8, HEIGHT*0.78, G.t, i);
+        for (let i=0; i<9; i++) drawArcadeCabinet(60 + i*(WIDTH-120)/8, HEIGHT*0.78, G.t, i);
         ctx.fillStyle = "#0a0d16"; ctx.fillRect(0, HEIGHT*0.86, WIDTH, HEIGHT*0.14);
     }
 
@@ -865,7 +822,6 @@ function drawMenu() {
 
 let sliderRects = {};
 let draggingSlider = null;
-function volKeyOf(name) { return { "МУЗЫКА":"music", "ЛАЗЕР ГЕРОЯ":"laser", "АТАКИ БОССА":"boss", "ШАГИ/АТАКИ КУКОЛ":"robot" }[name]; }
 
 function handleClick(mx, my) {
     if (G.state === "MENU") {
@@ -926,14 +882,10 @@ function drawSettings() {
     drawText("ESC - назад · тяните ползунки мышью", 14, "#96dcff", WIDTH/2, 500, true, false);
 }
 
-// ----------------------------------------------------------------------
-//  PATH SCREEN RENDER — wooden plank path + corridor islands
-// ----------------------------------------------------------------------
 function drawPathScreen() {
     ctx.fillStyle = "#0c1220"; ctx.fillRect(0,0,WIDTH,HEIGHT);
     drawVGradient(0, HEIGHT*0.35, WIDTH, HEIGHT*0.37, "rgba(90,20,40,0.0)", "rgba(60,15,30,0.25)");
 
-    // wooden plank path
     drawVGradient(0, GROUND_Y, WIDTH, HEIGHT-GROUND_Y, "#6b4a2a", "#3a2712");
     const plankW = 96;
     const startPlank = Math.floor(G.camX / plankW) * plankW;
@@ -942,7 +894,7 @@ function drawPathScreen() {
         ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(sx, GROUND_Y); ctx.lineTo(sx, HEIGHT); ctx.stroke();
         ctx.strokeStyle = "rgba(255,220,180,0.06)"; ctx.lineWidth = 1;
-        for (let k=1;k<4;k++) { ctx.beginPath(); ctx.moveTo(sx+8, GROUND_Y+k*14); ctx.lineTo(sx+plankW-8, GROUND_Y+k*14+3); ctx.stroke(); }
+        for (let k=1; k<4; k++) { ctx.beginPath(); ctx.moveTo(sx+8, GROUND_Y+k*14); ctx.lineTo(sx+plankW-8, GROUND_Y+k*14+3); ctx.stroke(); }
     }
 
     if (G.camX < 0) for (let cx = WORLD_START+80; cx < -80; cx += 160) drawArcadeCabinet(cx-G.camX, GROUND_Y, G.t, cx);
@@ -953,23 +905,18 @@ function drawPathScreen() {
     }
     for (const pr of G.enemyProj) { ctx.fillStyle = "#00ff44"; ctx.beginPath(); ctx.arc(pr.x-G.camX, GROUND_Y+pr.y, 6, 0, 7); ctx.fill(); }
 
-    // corridor islands: black rectangular alcove sunk into the path, grass/tree
-    // oval border, shield button centered, machines flanking left/right.
     for (const isl of G.islands) {
         const sx = isl.x - G.camX;
-        // grass/tree oval border
         drawVGradient(sx-isl.rx-20, GROUND_Y-isl.ry-14, (isl.rx+20)*2, (isl.ry+14)*2+40, "#2e5a24", "#1a3814", 60);
         for (let ti=-2; ti<=2; ti++) {
             const tx = sx + ti*isl.rx*0.45, ty = GROUND_Y - isl.ry - 6;
             ctx.fillStyle = "#3a2412"; ctx.fillRect(tx-4, ty-18, 8, 24);
             ctx.fillStyle = "#2f6a2a"; ctx.beginPath(); ctx.arc(tx, ty-26, 16, 0, 7); ctx.fill();
         }
-        // black corridor alcove
         ctx.fillStyle = "#050508";
         ctx.beginPath(); ctx.roundRect(sx-isl.rx, GROUND_Y-isl.ry, isl.rx*2, isl.ry*2, 18); ctx.fill();
         ctx.strokeStyle = "#1a1a24"; ctx.lineWidth = 6; ctx.stroke();
 
-        // shield button, centered
         const btnX = sx, btnY = GROUND_Y - 10;
         ctx.fillStyle = isl.domeOn ? "#3fd0ff" : "#245560";
         ctx.beginPath(); ctx.arc(btnX, btnY, 16, 0, 7); ctx.fill();
@@ -1001,9 +948,6 @@ function drawPathScreen() {
     ctx.fillStyle = "#78ff3f"; ctx.fillRect(WIDTH/2-128, 12, 256*prog, 6);
 }
 
-// ----------------------------------------------------------------------
-//  ARENA SCREEN RENDER — big wooden theater floor, detailed boss
-// ----------------------------------------------------------------------
 function drawArenaScreen() {
     const p = G.player, b = G.boss;
     const shakeX = Math.random()*G.screenShake*5, shakeY = Math.random()*G.screenShake*5;
@@ -1011,7 +955,6 @@ function drawArenaScreen() {
 
     ctx.fillStyle = "#0c0612"; ctx.fillRect(0,0,WIDTH,HEIGHT);
 
-    // wooden theater floor
     ctx.save();
     ctx.beginPath(); ctx.arc(offX, offY, ARENA_R, 0, 7); ctx.clip();
     drawVGradient(offX-ARENA_R, offY-ARENA_R, ARENA_R*2, ARENA_R*2, "#7a5a34", "#4a3418");
@@ -1032,7 +975,7 @@ function drawArenaScreen() {
     if (G.arenaDarkness > 0) {
         ctx.fillStyle = `rgba(0,0,0,${0.6*G.arenaDarkness})`;
         ctx.save(); ctx.beginPath(); ctx.arc(offX, offY, ARENA_R, 0, 7); ctx.clip(); ctx.fillRect(0,0,WIDTH,HEIGHT); ctx.restore();
-        for (let i=0;i<10;i++) {
+        for (let i=0; i<10; i++) {
             const ang = i/10*Math.PI*2;
             const cxp = offX+Math.cos(ang)*ARENA_R*0.9, cyp = offY+Math.sin(ang)*ARENA_R*0.9;
             ctx.fillStyle = "#ffcf3f"; ctx.globalAlpha = 0.7+0.3*Math.sin(G.t*3+i); ctx.beginPath(); ctx.arc(cxp,cyp,3,0,7); ctx.fill(); ctx.globalAlpha=1;
@@ -1044,19 +987,18 @@ function drawArenaScreen() {
         ctx.beginPath(); ctx.arc(offX, offY, ARENA_R*0.4, 0, 7); ctx.stroke();
     }
 
-    // Boss: suit per spec — black pants, blue-grey pinstripe shirt, grey vest
     if (b && b.alive) {
         const sx = b.x+offX, sy = b.y+offY+b.hopY;
-        ctx.fillStyle = "#0a0a0a"; ctx.fillRect(sx-32, sy-6, 22, 56); ctx.fillRect(sx+10, sy-6, 22, 56); // black pants
+        ctx.fillStyle = "#0a0a0a"; ctx.fillRect(sx-32, sy-6, 22, 56); ctx.fillRect(sx+10, sy-6, 22, 56);
         const shirtGrad = ctx.createLinearGradient(sx-42, sy-46, sx+42, sy+16);
         shirtGrad.addColorStop(0, "#5c6a80"); shirtGrad.addColorStop(1, "#3a4658");
         ctx.fillStyle = shirtGrad; ctx.fillRect(sx-42, sy-46, 84, 62);
         ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1.5;
         for (let lx=-32; lx<40; lx+=9) { ctx.beginPath(); ctx.moveTo(sx+lx, sy-44); ctx.lineTo(sx+lx, sy+14); ctx.stroke(); }
-        ctx.fillStyle = "#6e7480"; ctx.beginPath(); // grey vest
+        ctx.fillStyle = "#6e7480"; ctx.beginPath();
         ctx.moveTo(sx-26, sy-44); ctx.lineTo(sx+26, sy-44); ctx.lineTo(sx+18, sy+10); ctx.lineTo(sx-18, sy+10); ctx.closePath(); ctx.fill();
 
-        ctx.fillStyle = "#1a1a20"; ctx.fillRect(sx-48, sy-128, 96, 66); // TV head
+        ctx.fillStyle = "#1a1a20"; ctx.fillRect(sx-48, sy-128, 96, 66);
         if (b.stunTimer > 0) {
             ctx.fillStyle = G.t % 0.2 > 0.1 ? "#ff3232" : "#32ff32"; ctx.fillRect(sx-42, sy-122, 84, 52);
             for (let gy=-118; gy<-74; gy+=6) { ctx.strokeStyle = `hsl(${(G.t*400+gy)%360},80%,60%)`; ctx.beginPath(); ctx.moveTo(sx-40, sy+gy+120); ctx.lineTo(sx+40, sy+gy+120); ctx.stroke(); }
@@ -1086,9 +1028,6 @@ function drawArenaScreen() {
     for (const pt of G.particles) { ctx.fillStyle = pt.color; ctx.fillRect(pt.x+offX, pt.y+offY, 4, 4); }
 }
 
-// ----------------------------------------------------------------------
-//  HUD / CARD POPUP / END
-// ----------------------------------------------------------------------
 function drawHUD() {
     const p = G.player;
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(12,12,220,46);
@@ -1126,9 +1065,6 @@ function drawEnd() {
     lines.forEach((ln,i) => drawText(ln, 20, "#ffcf3f", WIDTH/2, HEIGHT/2-40+i*34, true));
 }
 
-// ----------------------------------------------------------------------
-//  MAIN LOOP
-// ----------------------------------------------------------------------
 let lastTime = performance.now();
 function gameLoop(now) {
     let dt = (now - lastTime) / 1000.0; lastTime = now;
