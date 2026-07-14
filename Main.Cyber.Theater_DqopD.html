@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>КИБЕР-ТЕАТР DQOPD - Полная Версия</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            background: #000;
+            border: 2px solid #ffcf3f;
+        }
+
+        #gameContainer {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a0a0a, #1a1a2e);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        #menu h1 {
+            font-size: 48px;
+            color: #ffcf3f;
+            margin-bottom: 20px;
+            text-shadow: 0 0 20px #ffcf3f;
+        }
+
+        #menu p {
+            font-size: 18px;
+            color: #00ff00;
+            margin-bottom: 30px;
+        }
+
+        #menu button {
+            padding: 15px 40px;
+            font-size: 20px;
+            background: #ffcf3f;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            margin: 10px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        #menu button:hover {
+            background: #00ff00;
+            transform: scale(1.1);
+        }
+
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00ff00;
+            font-size: 14px;
+            z-index: 100;
+        }
+
+        .hud-item {
+            margin: 5px 0;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #ffff00;
+            font-size: 12px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="menu">
+            <h1>🎭 КИБЕР-ТЕАТР DQOPD 🎭</h1>
+            <p>Полная версия с расширенными локациями и врагами</p>
+            <button onclick="startGame()">▶ НАЧАТЬ ИГРУ</button>
+            <button onclick="showCredits()">ℹ ИНФОРМАЦИЯ</button>
+        </div>
+        <div id="hud"></div>
+        <div id="status"></div>
+    </div>
+
+    <script src="CyberTheater_audio.js"></script>
+    <script src="CyberTheater_locations.js"></script>
+    <script src="CyberTheater_enemies.js"></script>
+    <script src="CyberTheater_inventory.js"></script>
+
+    <script>
+        // ==================== ОСНОВНАЯ ИГРА ====================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const menu = document.getElementById('menu');
+        const hud = document.getElementById('hud');
+        const status = document.getElementById('status');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Переменные игры
+        let gameRunning = false;
+        let currentLocation = 'spawnRoom';
+        let scrollX = 0;
+        let playerX = 100;
+        let playerY = canvas.height - 150;
+        let playerVX = 0;
+        let playerVY = 0;
+        let playerSize = 26; // 1.15x меньше (30 * 0.87)
+        let playerHP = 100;
+        let playerMaxHP = 100;
+        let inventory = new Inventory();
+        let enemies = [];
+        let loots = [];
+        let doors = [];
+        let hideouts = [];
+        let puzzleRooms = [];
+        let whiteBear = null;
+        let bearAppeared = false;
+        let gameTime = 0;
+        let currentMusic = null;
+
+        // Состояния
+        let isJumping = false;
+        let isHiding = false;
+        let keys = {};
+
+        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+        function startGame() {
+            menu.style.display = 'none';
+            gameRunning = true;
+            SFX.init();
+            initializeGame();
+        }
+
+        function initializeGame() {
+            currentLocation = 'spawnRoom';
+            scrollX = 0;
+            playerX = 100;
+            playerY = canvas.height - 150;
+            playerHP = 100;
+            inventory = new Inventory();
+            enemies = [];
+            loots = [];
+            doors = [];
+            hideouts = [];
+            puzzleRooms = [];
+            whiteBear = null;
+            bearAppeared = false;
+            gameTime = 0;
+
+            // Создание аркадных автоматов в стартовой комнате
+            createSpawnRoom();
+        }
+
+        function createSpawnRoom() {
+            // Аркадные автоматы
+            const machines = [
+                { x: 150, y: 300, name: 'ЗДОРОВЬЕ', type: 'health', active: false },
+                { x: 300, y: 300, name: 'БОЕЗАПАС', type: 'ammo', active: false },
+                { x: 450, y: 300, name: 'УРОН', type: 'damage', active: false },
+                { x: 600, y: 300, name: 'СКОРОСТЬ', type: 'speed', active: false },
+                { x: 750, y: 300, name: 'ОМП', type: 'omp', active: false }
+            ];
+
+            // Двери (выход)
+            doors = [
+                new Door(canvas.width - 100, canvas.height - 200, 50, 150, false)
+            ];
+
+            // Хранение машин в переменной
+            window.arcadeMachines = machines;
+        }
+
+        function createPath() {
+            // Тропа с врагами
+            currentLocation = 'path';
+            enemies = [];
+
+            // Враги на тропе (каждые 1000 единиц)
+            for (let i = 1; i < 12; i++) {
+                const enemyTypes = ['ballerina', 'clown', 'barman', 'dancer'];
+                const type = enemyTypes[i % enemyTypes.length];
+                enemies.push(new Enemy(i * 1000 + 500, canvas.height - 200, type, 30));
+            }
+
+            // Двери (замки)
+            doors = [
+                new Door(11000, canvas.height - 250, 50, 150, true)
+            ];
+
+            scrollX = 0;
+            playerX = 100;
+            playerY = canvas.height - 150;
+        }
+
+        function createGardens() {
+            currentLocation = 'gardens';
+            enemies = [];
+            loots = [];
+            doors = [];
+            hideouts = [];
+            puzzleRooms = [];
+
+            // Враги-растения
+            for (let i = 0; i < 15; i++) {
+                enemies.push(new Enemy(i * 500 + 500, canvas.height - 200, 'plant', 30));
+            }
+
+            // Загадки (комнаты с кирпичной дорожкой)
+            for (let i = 0; i < 3; i++) {
+                puzzleRooms.push(new PuzzleRoom(i * 2000 + 500, canvas.height - 400, 400, 300));
+            }
+
+            // Двери
+            doors = [
+                new Door(5000, canvas.height - 250, 50, 150, true)
+            ];
+
+            scrollX = 11000;
+            playerX = 11100;
+            playerY = canvas.height - 150;
+        }
+
+        function createLabyrinth() {
+            currentLocation = 'labyrinth';
+            enemies = [];
+            loots = [];
+            doors = [];
+            hideouts = [];
+            puzzleRooms = [];
+
+            // Монстр лабиринта (2 щупальца)
+            const labMonster = new Enemy(7500, canvas.height - 300, 'labyrinthMonster', 40);
+            enemies.push(labMonster);
+
+            // Шкафы для укрытия
+            for (let i = 0; i < 5; i++) {
+                hideouts.push(new Hideout(i * 2500 + 1000, canvas.height - 250, 80, 120));
+            }
+
+            // Двери (финальная арена)
+            doors = [
+                new Door(15000, canvas.height - 250, 50, 150, true)
+            ];
+
+            scrollX = 5000;
+            playerX = 5100;
+            playerY = canvas.height - 150;
+        }
+
+        function createBossArena() {
+            currentLocation = 'arena';
+            enemies = [];
+            loots = [];
+            doors = [];
+            hideouts = [];
+            puzzleRooms = [];
+
+            // Босс DQOPD
+            const boss = new Enemy(canvas.width / 2, canvas.height / 2 - 100, 'dqopd', 60);
+            boss.maxHp = 300;
+            boss.hp = 300;
+            enemies.push(boss);
+
+            scrollX = 0;
+            playerX = 100;
+            playerY = canvas.height - 150;
+        }
+
+        // ==================== ОБНОВЛЕНИЕ ИГРЫ ====================
+        function update(dt) {
+            if (!gameRunning) return;
+
+            gameTime += dt;
+
+            // Управление игроком
+            updatePlayer(dt);
+
+            // Обновление врагов
+            enemies.forEach(enemy => {
+                enemy.update(dt, playerX + scrollX, playerY);
+            });
+
+            // Обновление лута
+            loots = loots.filter(loot => {
+                loot.update(dt);
+                
+                if (loot.checkCollection(playerX, playerY, 50)) {
+                    applyLoot(loot);
+                    return false;
+                }
+                
+                return !loot.collected;
+            });
+
+            // Проверка столкновений с врагами
+            checkEnemyCollisions();
+
+            // Проверка столкновений с дверями
+            checkDoorCollisions();
+
+            // Проверка столкновений с укрытиями
+            checkHideoutCollisions();
+
+            // Белый Медведь (появляется на 15000-20000)
+            if (currentLocation === 'path' && scrollX > 15000 && !bearAppeared) {
+                bearAppeared = true;
+                whiteBear = new WhiteBear(scrollX + canvas.width / 2, canvas.height / 2);
+                SFX.enemy.whiteBear.entrance();
+            }
+
+            if (whiteBear && bearAppeared) {
+                whiteBear.update(dt, playerX + scrollX, playerY);
+                
+                // Проверка столкновения с медведем
+                const dx = playerX - (whiteBear.x - scrollX);
+                const dy = playerY - whiteBear.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < playerSize + whiteBear.size) {
+                    if (whiteBear.canAttack()) {
+                        const attack = whiteBear.attack();
+                        takeDamage(attack.damage);
+                        
+                        if (attack.type === 'bear_kill') {
+                            SFX.enemy.whiteBear.killAttack();
+                        } else if (attack.type === 'bear_half') {
+                            SFX.enemy.whiteBear.attack();
+                        }
+                    }
+                }
+            }
+
+            // Обновление музыки
+            if (currentLocation === 'path' && bearAppeared) {
+                SFX.updateMusic(SFX.music.bearChase, dt);
+            } else if (currentLocation === 'path') {
+                SFX.updateMusic(SFX.music.path, dt);
+            } else if (currentLocation === 'gardens') {
+                SFX.updateMusic(SFX.music.garden, dt);
+            } else if (currentLocation === 'labyrinth') {
+                SFX.updateMusic(SFX.music.labyrinth, dt);
+            } else if (currentLocation === 'arena') {
+                SFX.updateMusic(SFX.music.boss, dt);
+            }
+
+            // Проверка завершения уровня
+            checkLevelCompletion();
+        }
+
+        function updatePlayer(dt) {
+            // Движение
+            playerVX = 0;
+            if (keys['ArrowLeft'] || keys['a']) playerVX = -5;
+            if (keys['ArrowRight'] || keys['d']) playerVX = 5;
+
+            // Прыжок
+            if ((keys[' '] || keys['w']) && !isJumping) {
+                playerVY = -10;
+                isJumping = true;
+                SFX.player.jump();
+            }
+
+            // Гравитация
+            playerVY += 0.3;
+            if (playerVY > 5) playerVY = 5;
+
+            // Обновление позиции
+            playerX += playerVX;
+            playerY += playerVY;
+
+            // Коллизия с полом
+            if (playerY + playerSize > canvas.height - 100) {
+                playerY = canvas.height - 100 - playerSize;
+                playerVY = 0;
+                isJumping = false;
+            }
+
+            // Скролл камеры
+            scrollX = playerX - canvas.width / 4;
+            if (scrollX < 0) scrollX = 0;
+
+            // Границы уровня
+            if (playerX < 0) playerX = 0;
+            if (playerX > 50000) playerX = 50000;
+        }
+
+        function checkEnemyCollisions() {
+            enemies.forEach(enemy => {
+                if (!enemy.active) return;
+
+                const dx = playerX - enemy.x;
+                const dy = playerY - enemy.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < playerSize + enemy.size) {
+                    if (enemy.canAttack()) {
+                        const attack = enemy.attack();
+                        takeDamage(attack.damage);
+                        SFX.player.hit();
+                    }
+                }
+            });
+        }
+
+        function checkDoorCollisions() {
+            doors.forEach(door => {
+                if (door.checkCollision(playerX, playerY, playerSize)) {
+                    if (keys['e']) {
+                        if (door.tryOpen(inventory.keys > 0)) {
+                            if (door.requiresKey) {
+                                inventory.useKey();
+                                SFX.player.pickup();
+                            }
+                            
+                            // Переход на следующую локацию
+                            if (currentLocation === 'spawnRoom') {
+                                createPath();
+                            } else if (currentLocation === 'path') {
+                                createGardens();
+                            } else if (currentLocation === 'gardens') {
+                                createLabyrinth();
+                            } else if (currentLocation === 'labyrinth') {
+                                createBossArena();
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function checkHideoutCollisions() {
+            hideouts.forEach(hideout => {
+                if (hideout.checkCollision(playerX, playerY, playerSize)) {
+                    if (keys['e']) {
+                        isHiding = !isHiding;
+                        if (isHiding) {
+                            hideout.activate();
+                        } else {
+                            hideout.deactivate();
+                        }
+                    }
+                }
+            });
+        }
+
+        function takeDamage(amount) {
+            playerHP -= amount;
+            if (playerHP <= 0) {
+                playerHP = 0;
+                gameOver();
+            }
+        }
+
+        function applyLoot(loot) {
+            switch (loot.type) {
+                case 'health':
+                    if (inventory.addHealth(loot.amount)) {
+                        SFX.player.heal();
+                    }
+                    break;
+                case 'key':
+                    inventory.addKey(loot.amount);
+                    SFX.player.pickup();
+                    break;
+                case 'omp':
+                    inventory.addOMP(loot.amount);
+                    SFX.player.pickup();
+                    break;
+                case 'currency':
+                    inventory.addCurrency(loot.amount);
+                    SFX.player.pickup();
+                    break;
+            }
+        }
+
+        function checkLevelCompletion() {
+            if (currentLocation === 'arena') {
+                const boss = enemies.find(e => e.type === 'dqopd');
+                if (boss && !boss.active) {
+                    gameWon();
+                }
+            }
+        }
+
+        // ==================== ОТРИСОВКА ====================
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Отрисовка локации
+            if (currentLocation === 'spawnRoom') {
+                LOCATIONS.spawnRoom.draw(ctx, canvas.width, canvas.height);
+                LOCATIONS.spawnRoom.drawArcadeMachines(ctx, window.arcadeMachines || []);
+            } else {
+                drawLocation(ctx, currentLocation, canvas.width, canvas.height, scrollX);
+            }
+
+            // Отрисовка врагов
+            enemies.forEach(enemy => {
+                ctx.save();
+                ctx.translate(-scrollX, 0);
+                enemy.draw(ctx);
+                ctx.restore();
+            });
+
+            // Отрисовка белого медведя
+            if (whiteBear && bearAppeared) {
+                ctx.save();
+                ctx.translate(-scrollX, 0);
+                whiteBear.draw(ctx);
+                ctx.restore();
+            }
+
+            // Отрисовка лута
+            loots.forEach(loot => {
+                ctx.save();
+                ctx.translate(-scrollX, 0);
+                loot.draw(ctx);
+                ctx.restore();
+            });
+
+            // Отрисовка дверей
+            doors.forEach(door => {
+                ctx.save();
+                ctx.translate(-scrollX, 0);
+                door.draw(ctx);
+                ctx.restore();
+            });
+
+            // Отрисовка загадок
+            puzzleRooms.forEach(puzzle => {
+                ctx.save();
+                ctx.translate(-scrollX, 0);
+                puzzle.draw(ctx);
+                ctx.restore();
+            });
+
+            // Отрисовка укрытий
+            hideouts.forEach(hideout => {
+                ctx.save();
+                ctx.translate(-scrollX, 0);
+                hideout.draw(ctx, isHiding);
+                ctx.restore();
+            });
+
+            // Отрисовка игрока
+            drawPlayer();
+
+            // Отрисовка HUD
+            drawHUD();
+
+            // Отрисовка инвентаря
+            inventory.drawHUD(ctx, canvas.width, canvas.height);
+        }
+
+        function drawPlayer() {
+            const x = playerX;
+            const y = playerY;
+            const s = playerSize;
+
+            // Туловище
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(x - s / 2, y - s * 0.6, s, s * 0.8);
+
+            // Голова
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(x, y - s * 0.8, s * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Глаза
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(x - s * 0.1, y - s * 0.9, s * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + s * 0.1, y - s * 0.9, s * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Ноги
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(x - s * 0.15, y + s * 0.2, s * 0.1, s * 0.4);
+            ctx.fillRect(x + s * 0.05, y + s * 0.2, s * 0.1, s * 0.4);
+
+            // HP bar над головой
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(x - s / 2, y - s - 15, s * (playerHP / playerMaxHP), 5);
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - s / 2, y - s - 15, s, 5);
+        }
+
+        function drawHUD() {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '14px monospace';
+            ctx.textAlign = 'left';
+
+            hud.innerHTML = `
+                <div class="hud-item">HP: ${playerHP}/${playerMaxHP}</div>
+                <div class="hud-item">Location: ${currentLocation}</div>
+                <div class="hud-item">Position: ${Math.floor(playerX)}</div>
+                <div class="hud-item">Enemies: ${enemies.filter(e => e.active).length}</div>
+            `;
+
+            status.innerHTML = `
+                <div>Controls: ARROWS/WASD - Move | SPACE/W - Jump | E - Interact</div>
+                <div>Inventory: ${inventory.healthPotions} Health | ${inventory.keys} Keys | ${inventory.omp} OMP</div>
+            `;
+        }
+
+        // ==================== СОБЫТИЯ ====================
+        function gameOver() {
+            gameRunning = false;
+            menu.style.display = 'flex';
+            menu.innerHTML = `
+                <h1>💀 ИГРА ОКОНЧЕНА 💀</h1>
+                <p>Вы были побеждены...</p>
+                <button onclick="location.reload()">▶ НАЧАТЬ ЗАНОВО</button>
+            `;
+        }
+
+        function gameWon() {
+            gameRunning = false;
+            menu.style.display = 'flex';
+            menu.innerHTML = `
+                <h1>🏆 ПОБЕДА! 🏆</h1>
+                <p>Вы победили босса DQOPD!</p>
+                <p>Время: ${(gameTime / 1000).toFixed(1)} сек</p>
+                <button onclick="location.reload()">▶ НАЧАТЬ ЗАНОВО</button>
+            `;
+        }
+
+        function showCredits() {
+            menu.innerHTML = `
+                <h1>ИНФОРМАЦИЯ</h1>
+                <p>КИБЕР-ТЕАТР DQOPD - Полная Версия</p>
+                <p>Разработано с использованием Canvas API</p>
+                <p>Персонажи: Робот-Балерина, Клоун, Бармен, Танцор, Босс DQOPD</p>
+                <p>Враги: Жуткие растения, Монстр лабиринта, Белый Медведь</p>
+                <button onclick="startGame()">▶ НАЧАТЬ ИГРУ</button>
+            `;
+        }
+
+        // ==================== УПРАВЛЕНИЕ КЛАВИАТУРОЙ ====================
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // ==================== ОСНОВНОЙ ЦИКЛ ====================
+        let lastTime = Date.now();
+
+        function gameLoop() {
+            const now = Date.now();
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+
+            update(dt);
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Запуск
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        gameLoop();
+    </script>
+</body>
+</html>

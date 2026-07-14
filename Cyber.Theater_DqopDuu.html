@@ -1,0 +1,387 @@
+* CyberTheater_characters.js
+* Персонажи и их анимации для КИБЕР-ТЕАТРА DQOPD
+*/
+
+const CHARACTERS = {
+ // ==================== РОБОТ-БАЛЕРИНА ====================
+ ballerina: {
+   name: 'Робот-Балерина',
+   hp: 35,
+   speed: 1.8,
+   dmg: 18,
+   attackRange: 45,
+   attackCooldown: 1.2,
+   color: '#d946a6',
+   accentColor: '#ff69b4',
+   size: { w: 28, h: 52 },
+   
+   draw(ctx, x, y, state = 'idle', animFrame = 0) {
+     ctx.save();
+     ctx.translate(x, y);
+     
+     // Тело (торс)
+     ctx.fillStyle = this.color;
+     ctx.fillRect(-12, -15, 24, 30);
+     
+     // Голова
+     ctx.fillStyle = '#f5f5f5';
+     ctx.beginPath();
+     ctx.arc(0, -22, 8, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Глаза
+     ctx.fillStyle = '#000';
+     ctx.beginPath();
+     ctx.arc(-3, -24, 2, 0, Math.PI * 2);
+     ctx.arc(3, -24, 2, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Ноги
+     ctx.strokeStyle = this.accentColor;
+     ctx.lineWidth = 3;
+     ctx.beginPath();
+     ctx.moveTo(-6, 15);
+     ctx.lineTo(-6, 28);
+     ctx.moveTo(6, 15);
+     ctx.lineTo(6, 28);
+     ctx.stroke();
+     
+     // Анимация атаки (вращение)
+     if (state === 'attack') {
+       const rotation = (animFrame % 8) * (Math.PI / 4);
+       ctx.save();
+       ctx.rotate(rotation);
+       ctx.strokeStyle = this.accentColor;
+       ctx.lineWidth = 2;
+       ctx.beginPath();
+       ctx.arc(0, 0, 20, 0, Math.PI * 2);
+       ctx.stroke();
+       ctx.restore();
+     }
+     
+     ctx.restore();
+   },
+   
+   getAttackPos(x, y) {
+     return { x: x + 30, y: y - 10 };
+   }
+ },
+
+ // ==================== РОБОТ-КЛОУН ====================
+ clown: {
+   name: 'Робот-Клоун',
+   hp: 28,
+   speed: 2.2,
+   dmg: 16,
+   attackRange: 40,
+   attackCooldown: 1.5,
+   color: '#f59e0b',
+   accentColor: '#fbbf24',
+   size: { w: 32, h: 48 },
+   
+   draw(ctx, x, y, state = 'idle', animFrame = 0) {
+     ctx.save();
+     ctx.translate(x, y);
+     
+     // Тело
+     ctx.fillStyle = this.color;
+     ctx.fillRect(-14, -12, 28, 28);
+     
+     // Голова (большая)
+     ctx.fillStyle = '#fff';
+     ctx.beginPath();
+     ctx.arc(0, -20, 10, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Нос (красный)
+     ctx.fillStyle = '#ff0000';
+     ctx.beginPath();
+     ctx.arc(0, -20, 4, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Глаза (смешные)
+     ctx.fillStyle = '#000';
+     ctx.beginPath();
+     ctx.arc(-4, -22, 2, 0, Math.PI * 2);
+     ctx.arc(4, -22, 2, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Рот (улыбка)
+     ctx.strokeStyle = '#000';
+     ctx.lineWidth = 1.5;
+     ctx.beginPath();
+     ctx.arc(0, -18, 3, 0, Math.PI);
+     ctx.stroke();
+     
+     // Ноги
+     ctx.fillStyle = '#333';
+     ctx.fillRect(-8, 16, 6, 12);
+     ctx.fillRect(2, 16, 6, 12);
+     
+     // Анимация прыжка
+     if (state === 'jump') {
+       const jumpOffset = Math.sin((animFrame % 16) * Math.PI / 8) * 8;
+       ctx.translate(0, -jumpOffset);
+     }
+     
+     ctx.restore();
+   },
+   
+   getAttackPos(x, y) {
+     return { x: x + 25, y: y };
+   }
+ },
+
+ // ==================== РОБОТ-БАРМЕН ====================
+ barman: {
+   name: 'Робот-Бармен',
+   hp: 32,
+   speed: 1.5,
+   dmg: 20,
+   attackRange: 200,
+   attackCooldown: 2.0,
+   color: '#78350f',
+   accentColor: '#d97706',
+   size: { w: 30, h: 54 },
+   isRanged: true,
+   
+   draw(ctx, x, y, state = 'idle', animFrame = 0) {
+     ctx.save();
+     ctx.translate(x, y);
+     
+     // Тело (костюм)
+     ctx.fillStyle = this.color;
+     ctx.fillRect(-13, -14, 26, 32);
+     
+     // Рубашка
+     ctx.fillStyle = '#e5e7eb';
+     ctx.fillRect(-11, -10, 22, 12);
+     
+     // Голова
+     ctx.fillStyle = '#d4af37';
+     ctx.beginPath();
+     ctx.arc(0, -22, 7, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Глаза
+     ctx.fillStyle = '#000';
+     ctx.beginPath();
+     ctx.arc(-2, -23, 1.5, 0, Math.PI * 2);
+     ctx.arc(2, -23, 1.5, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Руки (держат коктейль)
+     ctx.strokeStyle = '#d4af37';
+     ctx.lineWidth = 2.5;
+     ctx.beginPath();
+     ctx.moveTo(-13, -5);
+     ctx.lineTo(-20, 0);
+     ctx.moveTo(13, -5);
+     ctx.lineTo(20, 0);
+     ctx.stroke();
+     
+     // Ноги
+     ctx.fillStyle = '#000';
+     ctx.fillRect(-6, 18, 4, 14);
+     ctx.fillRect(2, 18, 4, 14);
+     
+     // Анимация выстрела (коктейль)
+     if (state === 'attack') {
+       ctx.fillStyle = '#00ff00';
+       ctx.beginPath();
+       ctx.arc(20 + animFrame * 2, 0, 3, 0, Math.PI * 2);
+       ctx.fill();
+     }
+     
+     ctx.restore();
+   },
+   
+   getAttackPos(x, y) {
+     return { x: x + 40, y: y };
+   }
+ },
+
+ // ==================== РОБОТ-ТАНЦОР ====================
+ dancer: {
+   name: 'Робот-Танцор',
+   hp: 38,
+   speed: 2.5,
+   dmg: 14,
+   attackRange: 50,
+   attackCooldown: 0.8,
+   color: '#1e40af',
+   accentColor: '#3b82f6',
+   size: { w: 26, h: 50 },
+   
+   draw(ctx, x, y, state = 'idle', animFrame = 0) {
+     ctx.save();
+     ctx.translate(x, y);
+     
+     // Тело (фрак)
+     ctx.fillStyle = this.color;
+     ctx.fillRect(-11, -12, 22, 28);
+     
+     // Рубашка
+     ctx.fillStyle = '#fff';
+     ctx.fillRect(-9, -8, 18, 10);
+     
+     // Голова
+     ctx.fillStyle = '#fdbcb4';
+     ctx.beginPath();
+     ctx.arc(0, -20, 7, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Волосы (стильные)
+     ctx.fillStyle = '#000';
+     ctx.beginPath();
+     ctx.arc(0, -24, 7, 0, Math.PI);
+     ctx.fill();
+     
+     // Глаза
+     ctx.fillStyle = '#000';
+     ctx.beginPath();
+     ctx.arc(-2.5, -21, 1.5, 0, Math.PI * 2);
+     ctx.arc(2.5, -21, 1.5, 0, Math.PI * 2);
+     ctx.fill();
+     
+     // Ноги (танцевальная поза)
+     const legOffset = Math.sin((animFrame % 16) * Math.PI / 8) * 3;
+     ctx.fillStyle = '#000';
+     ctx.fillRect(-5, 16, 4, 14);
+     ctx.fillRect(1 + legOffset, 16, 4, 14);
+     
+     // Анимация комбо (линии атаки)
+     if (state === 'attack') {
+       ctx.strokeStyle = this.accentColor;
+       ctx.lineWidth = 2;
+       ctx.globalAlpha = 0.6;
+       for (let i = 0; i < 3; i++) {
+         ctx.beginPath();
+         ctx.arc(15 + i * 8, -5 + i * 3, 2, 0, Math.PI * 2);
+         ctx.stroke();
+       }
+       ctx.globalAlpha = 1;
+     }
+     
+     ctx.restore();
+   },
+   
+   getAttackPos(x, y) {
+     return { x: x + 28, y: y - 8 };
+   }
+ },
+
+ // ==================== РОБОТ-БОСС: DQOPD ====================
+ dqopd: {
+   name: 'DQOPD - Гиран Кибер-Театра',
+   hp: 300,
+   maxHp: 300,
+   speed: 1.2,
+   dmg: 25,
+   attackRange: 150,
+   attackCooldown: 1.5,
+   color: '#1f2937',
+   accentColor: '#10b981',
+   size: { w: 80, h: 100 },
+   
+   draw(ctx, x, y, state = 'idle', animFrame = 0, screenState = 'success') {
+     ctx.save();
+     ctx.translate(x, y);
+     
+     // Тело (костюм)
+     ctx.fillStyle = this.color;
+     ctx.fillRect(-30, -20, 60, 80);
+     
+     // Рубашка
+     ctx.fillStyle = '#e5e7eb';
+     ctx.fillRect(-28, -15, 56, 20);
+     
+     // Галстук
+     ctx.fillStyle = '#dc2626';
+     ctx.fillRect(-2, 5, 4, 15);
+     
+     // ГОЛОВА - ЭКРАН ТЕЛЕВИЗОРА
+     ctx.fillStyle = '#000';
+     ctx.fillRect(-25, -45, 50, 40);
+     ctx.strokeStyle = '#ffcf3f';
+     ctx.lineWidth = 3;
+     ctx.strokeRect(-25, -45, 50, 40);
+     
+     // Экран внутри (зелёный свет)
+     ctx.fillStyle = '#00ff00';
+     ctx.globalAlpha = 0.3;
+     ctx.fillRect(-23, -43, 46, 36);
+     ctx.globalAlpha = 1;
+     
+     // Выражение на экране (в зависимости от состояния)
+     ctx.fillStyle = '#00ff00';
+     if (screenState === 'success') {
+       // Улыбка
+       ctx.beginPath();
+       ctx.arc(-8, -25, 3, 0, Math.PI * 2);
+       ctx.arc(8, -25, 3, 0, Math.PI * 2);
+       ctx.fill();
+       ctx.beginPath();
+       ctx.arc(0, -20, 4, 0, Math.PI);
+       ctx.stroke();
+     } else if (screenState === 'damage') {
+       // Огорчение
+       ctx.beginPath();
+       ctx.arc(-8, -25, 3, 0, Math.PI * 2);
+       ctx.arc(8, -25, 3, 0, Math.PI * 2);
+       ctx.fill();
+       ctx.beginPath();
+       ctx.arc(0, -18, 3, Math.PI, 0);
+       ctx.stroke();
+     } else {
+       // Потеря
+       ctx.beginPath();
+       ctx.arc(-8, -25, 3, 0, Math.PI * 2);
+       ctx.arc(8, -25, 3, 0, Math.PI * 2);
+       ctx.fill();
+       ctx.fillRect(-2, -18, 4, 8);
+     }
+     
+     // Ноги
+     ctx.fillStyle = '#000';
+     ctx.fillRect(-12, 60, 8, 20);
+     ctx.fillRect(4, 60, 8, 20);
+     
+     // Анимация атаки (вспышка на экране)
+     if (state === 'attack') {
+       ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + Math.sin(animFrame * 0.5) * 0.2})`;
+       ctx.fillRect(-25, -45, 50, 40);
+     }
+     
+     ctx.restore();
+   },
+   
+   getAttackPos(x, y) {
+     return { x: x + 50, y: y - 20 };
+   }
+ }
+};
+
+// Функция для отрисовки персонажа
+function drawCharacter(ctx, characterKey, x, y, state = 'idle', animFrame = 0, extraData = {}) {
+ const char = CHARACTERS[characterKey];
+ if (!char) return;
+ 
+ if (characterKey === 'dqopd') {
+   char.draw(ctx, x, y, state, animFrame, extraData.screenState || 'success');
+ } else {
+   char.draw(ctx, x, y, state, animFrame);
+ }
+}
+
+// Функция для получения позиции атаки
+function getCharacterAttackPos(characterKey, x, y) {
+ const char = CHARACTERS[characterKey];
+ if (!char) return { x, y };
+ return char.getAttackPos(x, y);
+}
+
+// Экспорт для использования в других модулях
+if (typeof module !== 'undefined' && module.exports) {
+ module.exports = { CHARACTERS, drawCharacter, getCharacterAttackPos };
+}

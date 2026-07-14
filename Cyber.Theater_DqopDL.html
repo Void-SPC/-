@@ -1,0 +1,319 @@
+* CyberTheater_locations.js
+ * Система локаций для КИБЕР-ТЕАТРА DQOPD
+ */
+
+const LOCATIONS = {
+  // ==================== СТАРТОВАЯ КОМНАТА (АРКАДНЕС) ====================
+  spawnRoom: {
+    name: 'Комната Аркадных Автоматов',
+    bgColor: '#1a1a2e',
+    bgPattern: 'arcade',
+    width: 800,
+    height: 600,
+    
+    draw(ctx, width, height) {
+      // Тёмно-синий фон
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Сетка пола
+      ctx.strokeStyle = 'rgba(63, 207, 255, 0.2)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < width; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < height; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      
+      // Свечение в центре
+      const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width);
+      gradient.addColorStop(0, 'rgba(63, 207, 255, 0.1)');
+      gradient.addColorStop(1, 'rgba(10, 10, 20, 0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+    },
+    
+    drawArcadeMachines(ctx, machines) {
+      machines.forEach(m => {
+        // Корпус автомата
+        ctx.fillStyle = '#2a2a4a';
+        ctx.fillRect(m.x - 25, m.y - 40, 50, 80);
+        
+        // Экран
+        ctx.fillStyle = '#000';
+        ctx.fillRect(m.x - 20, m.y - 35, 40, 50);
+        
+        // Свечение экрана
+        ctx.fillStyle = m.active ? '#00ff00' : '#333';
+        ctx.globalAlpha = 0.5;
+        ctx.fillRect(m.x - 20, m.y - 35, 40, 50);
+        ctx.globalAlpha = 1;
+        
+        // Кнопки
+        ctx.fillStyle = '#ffcf3f';
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.arc(m.x - 12 + i * 8, m.y + 25, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        // Название
+        ctx.fillStyle = '#ffcf3f';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(m.name, m.x, m.y + 45);
+      });
+    }
+  },
+
+  // ==================== ТРОПА ====================
+  path: {
+    name: 'Тропа к Кибер-Театру',
+    bgColor: '#0a0a12',
+    bgPattern: 'space',
+    width: 12000,
+    height: 600,
+    
+    draw(ctx, width, height, scrollX = 0) {
+      // Космический фон
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Звёзды
+      ctx.fillStyle = '#fff';
+      for (let i = 0; i < 100; i++) {
+        const x = (i * 123 + scrollX * 0.3) % width;
+        const y = (i * 456) % height;
+        const size = (i % 3) * 0.5 + 0.5;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Деревянная тропа (путь, по которому идёт игрок)
+      const pathY = height * 0.65;
+      ctx.fillStyle = '#8b6f47';
+      ctx.fillRect(0, pathY, width, 60);
+      
+      // Доски тропы
+      ctx.strokeStyle = '#654321';
+      ctx.lineWidth = 2;
+      for (let x = -scrollX; x < width; x += 80) {
+        ctx.beginPath();
+        ctx.moveTo(x, pathY);
+        ctx.lineTo(x, pathY + 60);
+        ctx.stroke();
+      }
+      
+      // Деревянные конструкции (опоры)
+      ctx.fillStyle = '#654321';
+      for (let x = -scrollX; x < width; x += 200) {
+        // Левая опора
+        ctx.fillRect(x, pathY + 60, 15, 100);
+        // Правая опора
+        ctx.fillRect(x + 40, pathY + 60, 15, 100);
+        // Поперечина
+        ctx.fillRect(x, pathY + 80, 55, 10);
+      }
+      
+      // Детали на пути
+      this.drawPathDetails(ctx, scrollX, pathY);
+    },
+    
+    drawPathDetails(ctx, scrollX, pathY) {
+      // Мусор
+      ctx.fillStyle = '#666';
+      for (let i = 0; i < 50; i++) {
+        const x = (i * 240 - scrollX) % 12000;
+        const y = pathY + 20 + Math.sin(i) * 10;
+        
+        if (i % 3 === 0) {
+          // Коробка
+          ctx.fillRect(x, y, 15, 15);
+        } else if (i % 3 === 1) {
+          // Бутылка
+          ctx.fillStyle = '#00ff00';
+          ctx.fillRect(x, y, 8, 20);
+          ctx.fillStyle = '#666';
+        } else {
+          // Нос (от клоуна)
+          ctx.fillStyle = '#ff0000';
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#666';
+        }
+      }
+    }
+  },
+
+  // ==================== САДЫ ====================
+  gardens: {
+    name: 'Сады Кибер-Театра',
+    bgColor: '#1a3a1a',
+    bgPattern: 'garden',
+    width: 8000,
+    height: 600,
+    
+    draw(ctx, width, height, scrollX = 0) {
+      // Зелёный фон
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Градиент неба
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+      skyGrad.addColorStop(0, 'rgba(100, 150, 100, 0.3)');
+      skyGrad.addColorStop(1, 'rgba(50, 100, 50, 0)');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Растения
+      this.drawPlants(ctx, scrollX, width, height);
+      
+      // Земля
+      ctx.fillStyle = '#2a4a2a';
+      ctx.fillRect(0, height * 0.7, width, height * 0.3);
+    },
+    
+    drawPlants(ctx, scrollX, width, height) {
+      // Примитивные растения (деревья, кусты)
+      for (let i = 0; i < 30; i++) {
+        const x = (i * 260 - scrollX) % 8000;
+        const y = height * 0.6;
+        
+        // Ствол
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(x, y, 10, 80);
+        
+        // Листья
+        ctx.fillStyle = '#00aa00';
+        ctx.beginPath();
+        ctx.arc(x + 5, y - 20, 25, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = '#00cc00';
+        ctx.beginPath();
+        ctx.arc(x + 5, y - 10, 20, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  },
+
+  // ==================== ЛАБИРИНТ ====================
+  labyrinth: {
+    name: 'Лабиринт Кибер-Театра',
+    bgColor: '#0a0a0a',
+    bgPattern: 'labyrinth',
+    width: 15000,
+    height: 600,
+    
+    draw(ctx, width, height, scrollX = 0) {
+      // Чёрный фон
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Стены лабиринта (разноцветные)
+      this.drawWalls(ctx, scrollX, width, height);
+      
+      // Пол
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, height * 0.7, width, height * 0.3);
+    },
+    
+    drawWalls(ctx, scrollX, width, height) {
+      const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+      
+      for (let i = 0; i < 40; i++) {
+        const x = (i * 375 - scrollX) % 15000;
+        const color = colors[i % colors.length];
+        
+        // Вертикальные стены
+        ctx.fillStyle = color;
+        ctx.fillRect(x, height * 0.2, 30, height * 0.5);
+        
+        // Горизонтальные стены
+        ctx.fillRect(x + 50, height * 0.4, 80, 20);
+        
+        // Шкафы для укрытия
+        ctx.fillStyle = '#8b4513';
+        ctx.fillRect(x + 100, height * 0.5, 40, 60);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 100, height * 0.5, 40, 60);
+      }
+    }
+  },
+
+  // ==================== ФИНАЛЬНАЯ АРЕНА ====================
+  arena: {
+    name: 'Финальная Арена DQOPD',
+    bgColor: '#000',
+    bgPattern: 'arena',
+    width: 1600,
+    height: 900,
+    
+    draw(ctx, width, height) {
+      // Чёрный фон
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Клетчатый паттерн (фаза 1)
+      const checkSize = 40;
+      for (let x = 0; x < width; x += checkSize) {
+        for (let y = 0; y < height; y += checkSize) {
+          if ((Math.floor(x / checkSize) + Math.floor(y / checkSize)) % 2 === 0) {
+            ctx.fillStyle = '#1a1a2e';
+          } else {
+            ctx.fillStyle = '#2a2a4e';
+          }
+          ctx.fillRect(x, y, checkSize, checkSize);
+        }
+      }
+      
+      // Переливающийся эффект
+      ctx.fillStyle = `rgba(0, 255, 100, ${Math.sin(Date.now() * 0.001) * 0.1 + 0.1})`;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Арена (круг)
+      ctx.strokeStyle = '#ffcf3f';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(width / 2, height / 2, Math.min(width, height) * 0.35, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Шторы
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(0, 0, 50, height);
+      ctx.fillRect(width - 50, 0, 50, height);
+      ctx.fillRect(0, 0, width, 50);
+      ctx.fillRect(0, height - 50, width, 50);
+    }
+  }
+};
+
+// Функция для отрисовки локации
+function drawLocation(ctx, locationKey, width, height, scrollX = 0, extraData = {}) {
+  const loc = LOCATIONS[locationKey];
+  if (!loc) return;
+  
+  if (locationKey === 'spawnRoom') {
+    loc.draw(ctx, width, height);
+    if (extraData.machines) {
+      loc.drawArcadeMachines(ctx, extraData.machines);
+    }
+  } else {
+    loc.draw(ctx, width, height, scrollX);
+  }
+}
+
+// Экспорт
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { LOCATIONS, drawLocation };
+}

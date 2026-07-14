@@ -1,0 +1,387 @@
+* CyberTheater_audio.js
+* Полная аудиосистема для КИБЕР-ТЕАТРА DQOPD
+* Разные звуки для разных ситуаций, персонажей и врагов
+*/
+
+let audioCtx = null;
+const AUDIO_VOLUMES = {
+ music: 0.5,
+ sfx: 0.6,
+ boss: 0.7,
+ ambient: 0.4
+};
+
+function initAudio() {
+ if (!audioCtx) {
+   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+ }
+ if (audioCtx.state === 'suspended') {
+   audioCtx.resume();
+ }
+ return audioCtx;
+}
+
+// ==================== БАЗОВЫЕ ФУНКЦИИ ЗВУКА ====================
+function playTone(freq, duration, volume = 0.5, type = 'sine', slideTo = null) {
+ if (!audioCtx) initAudio();
+ try {
+   const osc = audioCtx.createOscillator();
+   const gain = audioCtx.createGain();
+   
+   osc.type = type;
+   osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+   if (slideTo) {
+     osc.frequency.exponentialRampToValueAtTime(Math.max(10, slideTo), audioCtx.currentTime + duration);
+   }
+   
+   gain.gain.setValueAtTime(Math.max(0.001, volume), audioCtx.currentTime);
+   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+   
+   osc.connect(gain);
+   gain.connect(audioCtx.destination);
+   
+   osc.start(audioCtx.currentTime);
+   osc.stop(audioCtx.currentTime + duration);
+ } catch (e) {
+   console.error('Audio error:', e);
+ }
+}
+
+function playNoise(duration, volume = 0.5, filterFreq = 1000) {
+ if (!audioCtx) initAudio();
+ try {
+   const bufSize = audioCtx.sampleRate * duration;
+   const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+   const data = buf.getChannelData(0);
+   
+   for (let i = 0; i < bufSize; i++) {
+     data[i] = (Math.random() * 2 - 1) * (1 - i / bufSize);
+   }
+   
+   const src = audioCtx.createBufferSource();
+   src.buffer = buf;
+   
+   const filter = audioCtx.createBiquadFilter();
+   filter.type = 'lowpass';
+   filter.frequency.value = filterFreq;
+   
+   const gain = audioCtx.createGain();
+   gain.gain.value = volume;
+   
+   src.connect(filter);
+   filter.connect(gain);
+   gain.connect(audioCtx.destination);
+   
+   src.start(audioCtx.currentTime);
+ } catch (e) {
+   console.error('Noise error:', e);
+ }
+}
+
+// ==================== ЗВУКИ ПЕРСОНАЖЕЙ ====================
+const CHARACTER_SOUNDS = {
+ // РОБОТ-БАЛЕРИНА
+ ballerina: {
+   attack: () => {
+     playTone(800, 0.15, 0.4 * AUDIO_VOLUMES.sfx, 'sine', 400);
+     playTone(1200, 0.12, 0.3 * AUDIO_VOLUMES.sfx, 'triangle', 600);
+   },
+   hit: () => {
+     playTone(600, 0.1, 0.35 * AUDIO_VOLUMES.sfx, 'square', 300);
+   },
+   death: () => {
+     playTone(500, 0.5, 0.5 * AUDIO_VOLUMES.sfx, 'sine', 100);
+     playNoise(0.3, 0.3 * AUDIO_VOLUMES.sfx, 800);
+   },
+   step: () => {
+     playTone(200, 0.05, 0.2 * AUDIO_VOLUMES.sfx, 'sine');
+   }
+ },
+
+ // РОБОТ-КЛОУН
+ clown: {
+   attack: () => {
+     playTone(400, 0.2, 0.4 * AUDIO_VOLUMES.sfx, 'square', 200);
+     playNoise(0.15, 0.25 * AUDIO_VOLUMES.sfx, 2000);
+   },
+   laugh: () => {
+     playTone(300, 0.1, 0.3 * AUDIO_VOLUMES.sfx, 'triangle');
+     playTone(450, 0.08, 0.25 * AUDIO_VOLUMES.sfx, 'triangle');
+     playTone(600, 0.06, 0.2 * AUDIO_VOLUMES.sfx, 'triangle');
+   },
+   jump: () => {
+     playTone(500, 0.08, 0.3 * AUDIO_VOLUMES.sfx, 'sine', 800);
+   },
+   hit: () => {
+     playTone(350, 0.12, 0.35 * AUDIO_VOLUMES.sfx, 'square', 150);
+   },
+   death: () => {
+     playTone(400, 0.6, 0.5 * AUDIO_VOLUMES.sfx, 'sine', 50);
+     playNoise(0.4, 0.4 * AUDIO_VOLUMES.sfx, 600);
+   }
+ },
+
+ // РОБОТ-БАРМЕН
+ barman: {
+   attack: () => {
+     playTone(1000, 0.2, 0.4 * AUDIO_VOLUMES.sfx, 'square', 500);
+     playNoise(0.1, 0.3 * AUDIO_VOLUMES.sfx, 3000);
+   },
+   acidHit: () => {
+     playTone(700, 0.3, 0.4 * AUDIO_VOLUMES.sfx, 'sawtooth', 300);
+     playNoise(0.2, 0.35 * AUDIO_VOLUMES.sfx, 1500);
+   },
+   reload: () => {
+     playTone(600, 0.1, 0.2 * AUDIO_VOLUMES.sfx, 'sine');
+     playTone(800, 0.08, 0.2 * AUDIO_VOLUMES.sfx, 'sine');
+   },
+   hit: () => {
+     playTone(800, 0.1, 0.35 * AUDIO_VOLUMES.sfx, 'square', 400);
+   },
+   death: () => {
+     playTone(600, 0.7, 0.5 * AUDIO_VOLUMES.sfx, 'sine', 100);
+     playNoise(0.5, 0.4 * AUDIO_VOLUMES.sfx, 800);
+   }
+ },
+
+ // РОБОТ-ТАНЦОР
+ dancer: {
+   attack: () => {
+     playTone(600, 0.12, 0.35 * AUDIO_VOLUMES.sfx, 'sine', 300);
+     playTone(900, 0.1, 0.3 * AUDIO_VOLUMES.sfx, 'sine', 500);
+   },
+   combo: () => {
+     for (let i = 0; i < 3; i++) {
+       setTimeout(() => {
+         playTone(500 + i * 150, 0.08, 0.25 * AUDIO_VOLUMES.sfx, 'sine', 300 + i * 100);
+       }, i * 50);
+     }
+   },
+   step: () => {
+     playTone(250, 0.06, 0.2 * AUDIO_VOLUMES.sfx, 'sine');
+   },
+   hit: () => {
+     playTone(700, 0.1, 0.35 * AUDIO_VOLUMES.sfx, 'square', 400);
+   },
+   death: () => {
+     playTone(500, 0.5, 0.5 * AUDIO_VOLUMES.sfx, 'sine', 100);
+     playNoise(0.3, 0.3 * AUDIO_VOLUMES.sfx, 1000);
+   }
+ },
+
+ // РОБОТ-БОСС: DQOPD
+ dqopd: {
+   roar: () => {
+     // Мощный рёв
+     playTone(100, 0.8, 0.7 * AUDIO_VOLUMES.boss, 'sawtooth', 50);
+     playNoise(0.6, 0.5 * AUDIO_VOLUMES.boss, 400);
+   },
+   attack: () => {
+     playTone(200, 0.3, 0.6 * AUDIO_VOLUMES.boss, 'square', 100);
+     playNoise(0.2, 0.4 * AUDIO_VOLUMES.boss, 1000);
+   },
+   screenFlash: () => {
+     playTone(1500, 0.1, 0.4 * AUDIO_VOLUMES.boss, 'sine', 2000);
+   },
+   hit: () => {
+     playTone(150, 0.2, 0.5 * AUDIO_VOLUMES.boss, 'square', 80);
+     playNoise(0.15, 0.35 * AUDIO_VOLUMES.boss, 800);
+   },
+   phaseChange: () => {
+     playTone(300, 0.5, 0.6 * AUDIO_VOLUMES.boss, 'sine', 600);
+     playTone(600, 0.4, 0.5 * AUDIO_VOLUMES.boss, 'sine', 1200);
+   },
+   death: () => {
+     playTone(200, 1.2, 0.7 * AUDIO_VOLUMES.boss, 'sine', 50);
+     playNoise(0.8, 0.6 * AUDIO_VOLUMES.boss, 600);
+   }
+ }
+};
+
+// ==================== ЗВУКИ ВРАГОВ ====================
+const ENEMY_SOUNDS = {
+ // Жуткие растения
+ plant: {
+   attack: () => {
+     playNoise(0.3, 0.5 * AUDIO_VOLUMES.sfx, 800);
+     playTone(300, 0.25, 0.4 * AUDIO_VOLUMES.sfx, 'sawtooth', 150);
+   },
+   bite: () => {
+     playTone(400, 0.15, 0.45 * AUDIO_VOLUMES.sfx, 'square', 200);
+     playNoise(0.1, 0.3 * AUDIO_VOLUMES.sfx, 1200);
+   },
+   death: () => {
+     playTone(500, 0.4, 0.4 * AUDIO_VOLUMES.sfx, 'sine', 200);
+     playNoise(0.3, 0.35 * AUDIO_VOLUMES.sfx, 1000);
+   }
+ },
+
+ // Монстр лабиринта
+ labyrinthMonster: {
+   roar: () => {
+     playTone(80, 1.0, 0.7 * AUDIO_VOLUMES.boss, 'sawtooth', 40);
+     playNoise(0.7, 0.6 * AUDIO_VOLUMES.boss, 300);
+   },
+   tentacleAttack: () => {
+     playTone(250, 0.4, 0.5 * AUDIO_VOLUMES.boss, 'sine', 100);
+     playNoise(0.3, 0.4 * AUDIO_VOLUMES.boss, 1500);
+   },
+   blockPath: () => {
+     playTone(600, 0.3, 0.4 * AUDIO_VOLUMES.boss, 'square', 300);
+     playNoise(0.2, 0.3 * AUDIO_VOLUMES.boss, 2000);
+   },
+   hit: () => {
+     playTone(150, 0.25, 0.5 * AUDIO_VOLUMES.boss, 'square', 80);
+     playNoise(0.15, 0.35 * AUDIO_VOLUMES.boss, 700);
+   }
+ },
+
+ // Белый Медведь
+ whiteBear: {
+   roar: () => {
+     // Эпический рёв медведя
+     playTone(120, 1.2, 0.8 * AUDIO_VOLUMES.boss, 'sawtooth', 60);
+     playNoise(0.8, 0.7 * AUDIO_VOLUMES.boss, 350);
+   },
+   footstep: () => {
+     playNoise(0.15, 0.4 * AUDIO_VOLUMES.boss, 500);
+     playTone(100, 0.1, 0.3 * AUDIO_VOLUMES.boss, 'sine');
+   },
+   attack: () => {
+     // Атака, которая сносит ½ ХП
+     playTone(150, 0.5, 0.7 * AUDIO_VOLUMES.boss, 'square', 75);
+     playNoise(0.4, 0.6 * AUDIO_VOLUMES.boss, 800);
+   },
+   killAttack: () => {
+     // Атака, которая сносит всё ХП
+     playTone(100, 0.8, 0.8 * AUDIO_VOLUMES.boss, 'sawtooth', 50);
+     playNoise(0.6, 0.7 * AUDIO_VOLUMES.boss, 400);
+   },
+   entrance: () => {
+     // Эпическое появление
+     playTone(200, 0.3, 0.6 * AUDIO_VOLUMES.boss, 'sine', 400);
+     playTone(100, 0.5, 0.7 * AUDIO_VOLUMES.boss, 'sawtooth', 50);
+     playNoise(0.4, 0.5 * AUDIO_VOLUMES.boss, 500);
+   }
+ }
+};
+
+// ==================== ЗВУКИ ИГРОКА ====================
+const PLAYER_SOUNDS = {
+ shoot: () => {
+   playTone(900, 0.1, 0.4 * AUDIO_VOLUMES.sfx, 'square', 400);
+ },
+ hit: () => {
+   playTone(500, 0.15, 0.4 * AUDIO_VOLUMES.sfx, 'sine', 250);
+ },
+ death: () => {
+   playTone(400, 0.8, 0.5 * AUDIO_VOLUMES.sfx, 'sine', 100);
+   playNoise(0.5, 0.4 * AUDIO_VOLUMES.sfx, 800);
+ },
+ heal: () => {
+   playTone(800, 0.2, 0.4 * AUDIO_VOLUMES.sfx, 'sine', 1200);
+ },
+ jump: () => {
+   playTone(600, 0.1, 0.3 * AUDIO_VOLUMES.sfx, 'sine', 800);
+ },
+ pickup: () => {
+   playTone(1000, 0.1, 0.35 * AUDIO_VOLUMES.sfx, 'sine', 1500);
+ }
+};
+
+// ==================== МУЗЫКА ====================
+const MUSIC_THEMES = {
+ menu: {
+   notes: [262, 294, 330, 392, 440],
+   tempo: 0.3,
+   wave: 'sine',
+   vol: 0.04
+ },
+ arcadeRoom: {
+   notes: [196, 220, 246, 262, 294],
+   tempo: 0.25,
+   wave: 'triangle',
+   vol: 0.045
+ },
+ path: {
+   notes: [261, 293, 329, 392, 440, 523],
+   tempo: 0.22,
+   wave: 'square',
+   vol: 0.05
+ },
+ pathDanger: {
+   notes: [147, 165, 196, 220, 110, 131],
+   tempo: 0.12,
+   wave: 'sawtooth',
+   vol: 0.06
+ },
+ garden: {
+   notes: [329, 392, 440, 523, 587],
+   tempo: 0.4,
+   wave: 'sine',
+   vol: 0.04
+ },
+ labyrinth: {
+   notes: [110, 130, 146, 164, 98],
+   tempo: 0.15,
+   wave: 'sawtooth',
+   vol: 0.055
+ },
+ bearChase: {
+   notes: [80, 100, 120, 150, 90],
+   tempo: 0.08,
+   wave: 'sawtooth',
+   vol: 0.07
+ },
+ boss: {
+   notes: [110, 130, 146, 164, 98],
+   tempo: 0.1,
+   wave: 'sawtooth',
+   vol: 0.06
+ }
+};
+
+let musicTimer = 0;
+let currentMusicTheme = null;
+
+function updateMusic(theme, dt) {
+ if (!theme) return;
+ 
+ currentMusicTheme = theme;
+ musicTimer -= dt;
+ 
+ if (musicTimer <= 0) {
+   const note = theme.notes[Math.floor(Math.random() * theme.notes.length)];
+   playTone(note, theme.tempo * 0.8, theme.vol * AUDIO_VOLUMES.music, theme.wave);
+   
+   if (Math.random() < 0.4) {
+     playTone(note / 2, theme.tempo, theme.vol * 0.6 * AUDIO_VOLUMES.music, 'triangle');
+   }
+   
+   musicTimer = theme.tempo;
+ }
+}
+
+// ==================== ЭКСПОРТ ====================
+const SFX = {
+ // Персонажи
+ character: CHARACTER_SOUNDS,
+ enemy: ENEMY_SOUNDS,
+ player: PLAYER_SOUNDS,
+ 
+ // Музыка
+ music: MUSIC_THEMES,
+ updateMusic,
+ 
+ // Инициализация
+ init: initAudio,
+ setVolume: (category, value) => {
+   if (AUDIO_VOLUMES[category] !== undefined) {
+     AUDIO_VOLUMES[category] = Math.max(0, Math.min(1, value));
+   }
+ }
+};
+
+if (typeof module !== 'undefined' && module.exports) {
+ module.exports = SFX;
+}
